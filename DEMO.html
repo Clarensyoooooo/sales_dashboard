@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAM Supply Sales Dashboard - System Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 20px;
+        }
+
+        .preview-container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 20px;
+            opacity: 0.9;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .feature-card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .feature-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 22px;
+        }
+
+        .feature-card p {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .screenshot-section {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 40px;
+        }
+
+        .screenshot-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 32px;
+            text-align: center;
+        }
+
+        .mockup {
+            background: #f5f5f5;
+            border: 3px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .mockup-header {
+            background: #0078d4;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .kpi-mockup {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .kpi-box {
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #0078d4;
+            margin-bottom: 5px;
+        }
+
+        .kpi-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .chart-mockup {
+            background: white;
+            height: 200px;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .tech-stack {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin: 40px 0;
+        }
+
+        .tech-badge {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-weight: 600;
+            color: #333;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .cta-section {
+            text-align: center;
+            background: white;
+            padding: 50px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .cta-section h2 {
+            font-size: 36px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .cta-section p {
+            font-size: 18px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            background: #0078d4;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .btn:hover {
+            background: #106ebe;
+        }
+
+        .comparison {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 40px;
+        }
+
+        .comparison h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .comparison-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
+
+        .checkmark {
+            color: #4CAF50;
+            font-size: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .kpi-mockup {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 32px;
+            }
+
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="preview-container">
+        <div class="header">
+            <h1>🚀 NAM Supply Sales Dashboard</h1>
+            <p>Complete Power BI Alternative • Real-Time Updates • Free & Open Source</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Real-Time Dashboard</h3>
+                <p>Live statistics that update every 30 seconds. See your sales data visualized instantly with beautiful charts and graphs.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">✍️</div>
+                <h3>Easy Data Entry</h3>
+                <p>Staff-friendly form with automatic calculations. No Excel required - enter data directly through the web interface.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📈</div>
+                <h3>Power BI Style</h3>
+                <p>Exact replica of your Power BI dashboard. Same colors, same layout, same professional look - but better!</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">💾</div>
+                <h3>CSV Import</h3>
+                <p>Import your existing data instantly. Supports your exact CSV format with all columns and currency formatting.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure & Reliable</h3>
+                <p>Built with security best practices. SQL injection protection, input validation, and data integrity guaranteed.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Mobile Ready</h3>
+                <p>Works perfectly on phones, tablets, and desktops. Responsive design adapts to any screen size.</p>
+            </div>
+        </div>
+
+        <div class="screenshot-section">
+            <h2>Dashboard Preview</h2>
+            <div class="mockup">
+                <div class="mockup-header">
+                    <span style="font-size: 18px; font-weight: 600;">📊 Sales Dashboard - NAM Supply</span>
+                    <span style="background: rgba(255,255,255,0.2); padding: 5px 15px; border-radius: 3px;">➕ Add New Entry</span>
+                </div>
+
+                <div class="kpi-mockup">
+                    <div class="kpi-box">
+                        <div class="kpi-value">₱1.02M</div>
+                        <div class="kpi-label">Total Sales</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-value">₱292.67K</div>
+                        <div class="kpi-label">Total Profit</div>
+                    </div>
+                    <div class="kpi-box">
+                        <div class="kpi-value">28.49%</div>
+                        <div class="kpi-label">Profit Margin %</div>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div class="chart-mockup">📈 Daily Sales & Profit Margin Chart</div>
+                    <div class="chart-mockup">📊 Company Sales Chart</div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px;">
+                    <div class="chart-mockup">🥧 Category Pie Chart</div>
+                    <div class="chart-mockup">📋 Category Breakdown Table</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="comparison">
+            <h2>Why Choose This Over Power BI?</h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Power BI</th>
+                        <th>This System</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Real-time Updates</strong></td>
+                        <td>Manual refresh needed</td>
+                        <td><span class="checkmark">✓</span> Auto-refresh every 30 seconds</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Entry</strong></td>
+                        <td>Upload Excel/CSV files</td>
+                        <td><span class="checkmark">✓</span> Direct web form entry</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Cost</strong></td>
+                        <td>Requires licenses ($$$)</td>
+                        <td><span class="checkmark">✓</span> Completely FREE</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Customization</strong></td>
+                        <td>Limited without Pro</td>
+                        <td><span class="checkmark">✓</span> Full source code control</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Multi-user</strong></td>
+                        <td>Requires sharing setup</td>
+                        <td><span class="checkmark">✓</span> Built-in from day one</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Mobile Access</strong></td>
+                        <td>Limited mobile app</td>
+                        <td><span class="checkmark">✓</span> Fully responsive web</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tech-stack">
+            <div class="tech-badge">🐘 PHP 7.4+</div>
+            <div class="tech-badge">🗄️ MySQL</div>
+            <div class="tech-badge">📊 Chart.js</div>
+            <div class="tech-badge">🎨 Responsive CSS</div>
+            <div class="tech-badge">⚡ JavaScript ES6</div>
+        </div>
+
+        <div class="cta-section">
+            <h2>Ready to Get Started?</h2>
+            <p>Complete installation takes less than 5 minutes. All files included!</p>
+            
+            <div style="margin: 30px 0;">
+                <h3 style="margin-bottom: 15px;">📦 Package Includes:</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; text-align: left; max-width: 800px; margin: 0 auto;">
+                    <div>✓ Dashboard (index.php)</div>
+                    <div>✓ Data Entry Form</div>
+                    <div>✓ REST API</div>
+                    <div>✓ Database Setup</div>
+                    <div>✓ CSV Import Tool</div>
+                    <div>✓ Full Documentation</div>
+                    <div>✓ Installation Guide</div>
+                    <div>✓ Configuration Files</div>
+                </div>
+            </div>
+
+            <div style="background: #f5f5f5; padding: 20px; border-radius: 10px; margin: 30px 0;">
+                <h3 style="margin-bottom: 15px;">🚀 Quick Start Commands:</h3>
+                <code style="display: block; background: #333; color: #0f0; padding: 15px; border-radius: 5px; text-align: left; overflow-x: auto;">
+# 1. Copy to web server<br>
+cp -r sales_dashboard /var/www/html/<br>
+<br>
+# 2. Setup database<br>
+mysql < sales_dashboard/setup.sql<br>
+<br>
+# 3. Import your data<br>
+php sales_dashboard/import_csv.php your_data.csv<br>
+<br>
+# 4. Open in browser<br>
+http://localhost/sales_dashboard/
+                </code>
+            </div>
+
+            <p style="font-size: 16px; color: #999; margin-top: 30px;">
+                Works on Windows (XAMPP), Mac (MAMP), Linux, and all cloud platforms
+            </p>
+        </div>
+    </div>
+</body>
+</html>
