@@ -4,111 +4,118 @@ require_once 'config.php';
 
 $conn = getDBConnection();
 
-// Get dashboard statistics
+// --- 1. Build Filter Query ---
+$where_clauses = ["1=1"];
+$params = [];
+$types = "";
+
+if (!empty($_GET['start_date'])) {
+    $where_clauses[] = "date >= ?";
+    $params[] = $_GET['start_date'];
+    $types .= "s";
+}
+if (!empty($_GET['end_date'])) {
+    $where_clauses[] = "date <= ?";
+    $params[] = $_GET['end_date'];
+    $types .= "s";
+}
+if (!empty($_GET['company'])) {
+    $where_clauses[] = "company = ?";
+    $params[] = $_GET['company'];
+    $types .= "s";
+}
+
+$where_sql = "WHERE " . implode(" AND ", $where_clauses);
+
+function executeQuery($conn, $sql, $types, $params) {
+    $stmt = $conn->prepare($sql);
+    if (!empty($params)) $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    return $stmt->get_result();
+}
+
 $stats = [];
 
-// Total Sales
-$result = $conn->query("SELECT SUM(total_nam_amount) as total_sales FROM sales");
-$row = $result->fetch_assoc();
-$stats['total_sales'] = $row['total_sales'] ?? 0;
+// --- 2. KPI Stats ---
+$sql = "SELECT SUM(total_nam_amount) as total_sales, SUM(income) as total_profit FROM sales $where_sql";
+$row = executeQuery($conn, $sql, $types, $params)->fetch_assoc();
+$stats['total_sales'] = floatval($row['total_sales'] ?? 0);
+$stats['total_profit'] = floatval($row['total_profit'] ?? 0);
+$stats['profit_margin'] = ($stats['total_sales'] > 0) ? ($stats['total_profit'] / $stats['total_sales']) * 100 : 0;
 
-// Total Profit (Income)
-$result = $conn->query("SELECT SUM(income) as total_profit FROM sales");
-$row = $result->fetch_assoc();
-$stats['total_profit'] = $row['total_profit'] ?? 0;
-
-// Profit Margin %
-if ($stats['total_sales'] > 0) {
-    $stats['profit_margin'] = ($stats['total_profit'] / $stats['total_sales']) * 100;
-} else {
-    $stats['profit_margin'] = 0;
-}
-
-// Total Sales and Profit Margin by Day
+// --- 3. Daily Sales & Margin Chart ---
 $daily_sales = [];
-$result = $conn->query("
-    SELECT 
-        DAY(date) as day,
-        SUM(total_nam_amount) as sales,
-        AVG(income_percent) as profit_margin
-    FROM sales
-    WHERE date IS NOT NULL
-    GROUP BY DAY(date)
-    ORDER BY DAY(date)
-");
+$sql = "SELECT 
+            DAY(date) as day, 
+            SUM(total_nam_amount) as sales,
+            SUM(income) as profit
+        FROM sales $where_sql AND date IS NOT NULL 
+        GROUP BY DAY(date) ORDER BY DAY(date)";
+$result = executeQuery($conn, $sql, $types, $params);
 
 while ($row = $result->fetch_assoc()) {
+    $sales = floatval($row['sales']);
+    $profit = floatval($row['profit']);
+    $margin = ($sales > 0) ? ($profit / $sales) * 100 : 0;
+    
     $daily_sales[] = [
         'day' => $row['day'],
-        'sales' => floatval($row['sales']),
-        'profit_margin' => floatval($row['profit_margin']) / 100
+        'sales' => $sales,
+        'margin' => $margin
     ];
 }
 
-// Total Sales by Company
+// --- 4. Company Chart (ALL COMPANIES - NO LIMIT) ---
 $company_sales = [];
-$result = $conn->query("
-    SELECT 
-        company,
-        SUM(total_nam_amount) as total_sales
-    FROM sales
-    WHERE company IS NOT NULL AND company != ''
-    GROUP BY company
-    ORDER BY total_sales DESC
-");
-
+$sql = "SELECT company, SUM(total_nam_amount) as total_sales 
+        FROM sales $where_sql AND company != '' 
+        GROUP BY company ORDER BY total_sales DESC"; // Removed LIMIT 10
+$result = executeQuery($conn, $sql, $types, $params);
 while ($row = $result->fetch_assoc()) {
-    $company_sales[] = [
-        'company' => $row['company'],
-        'total_sales' => floatval($row['total_sales'])
-    ];
+    $company_sales[] = ['company' => $row['company'], 'total_sales' => floatval($row['total_sales'])];
 }
 
-// Total Sales by Category
-$category_sales = [];
-$result = $conn->query("
-    SELECT 
-        category,
-        SUM(quantity_requested) as quantity,
-        SUM(total_nam_amount) as total_sales,
-        SUM(income) as total_profit
-    FROM sales
-    WHERE category IS NOT NULL AND category != ''
-    GROUP BY category
-    ORDER BY total_sales DESC
-");
-
+// --- 5. Matrix Data ---
+$category_breakdown = [];
+$sql = "SELECT category, SUM(quantity_requested) as total_qty, SUM(total_nam_amount) as total_sales, SUM(income) as total_profit 
+        FROM sales $where_sql AND category != '' GROUP BY category ORDER BY total_sales DESC";
+$result = executeQuery($conn, $sql, $types, $params);
 while ($row = $result->fetch_assoc()) {
-    $category_sales[] = [
+    $category_breakdown[$row['category']] = [
         'category' => $row['category'],
-        'quantity' => intval($row['quantity']),
+        'quantity' => intval($row['total_qty']),
         'total_sales' => floatval($row['total_sales']),
-        'total_profit' => floatval($row['total_profit'])
+        'total_profit' => floatval($row['total_profit']),
+        'items' => []
     ];
 }
 
-// Calculate total quantity and total sales for percentages
-$total_quantity = array_sum(array_column($category_sales, 'quantity'));
-$total_category_sales = array_sum(array_column($category_sales, 'total_sales'));
-
-foreach ($category_sales as &$cat) {
-    if ($total_category_sales > 0) {
-        $cat['percentage'] = ($cat['total_sales'] / $total_category_sales) * 100;
-    } else {
-        $cat['percentage'] = 0;
+$sql = "SELECT category, item, SUM(quantity_requested) as qty, SUM(total_nam_amount) as sales, SUM(income) as profit 
+        FROM sales $where_sql AND category != '' GROUP BY category, item ORDER BY sales DESC";
+$result = executeQuery($conn, $sql, $types, $params);
+while ($row = $result->fetch_assoc()) {
+    if (isset($category_breakdown[$row['category']])) {
+        $category_breakdown[$row['category']]['items'][] = [
+            'name' => $row['item'],
+            'qty' => intval($row['qty']),
+            'sales' => floatval($row['sales']),
+            'profit' => floatval($row['profit'])
+        ];
     }
 }
 
-// Compile response
-$response = [
+// --- 6. Company Dropdown ---
+$companies = [];
+$res = $conn->query("SELECT DISTINCT company FROM sales WHERE company != '' ORDER BY company");
+while($r = $res->fetch_assoc()) $companies[] = $r['company'];
+
+echo json_encode([
     'stats' => $stats,
     'daily_sales' => $daily_sales,
     'company_sales' => $company_sales,
-    'category_sales' => $category_sales,
-    'total_quantity' => $total_quantity
-];
-
-echo json_encode($response);
+    'category_matrix' => array_values($category_breakdown),
+    'companies' => $companies
+]);
 
 $conn->close();
 ?>
