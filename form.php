@@ -161,9 +161,10 @@
         <p class="subtitle">NAM Supply - Sales Encoder</p>
 
         <div class="nav-buttons">
-            <a href="index.php" class="btn btn-primary">📊 View Dashboard</a>
-            <a href="records.php" class="btn btn-secondary">📋 View Records</a>
-        </div>
+    <a href="index.php" class="btn btn-primary">📊 View Dashboard</a>
+    <a href="products.php" class="btn btn-secondary">📦 Price List</a>
+    <a href="records.php" class="btn btn-secondary">📋 View Records</a>
+</div>
 
         <?php if (isset($_GET['error'])): ?>
             <div class="alert alert-error">
@@ -211,9 +212,10 @@
                 </div>
 
                 <div class="form-group full-width">
-                    <label>ITEM <span class="required">*</span></label>
-                    <input type="text" name="item" required placeholder="e.g., EXPANDABLE FOLDER BLUE SHORT">
-                </div>
+    <label>ITEM <span class="required">*</span></label>
+    <input type="text" name="item" id="itemInput" list="itemList" required placeholder="Start typing to search..." autocomplete="off">
+    <datalist id="itemList"></datalist>
+</div>
             </div>
 
             <div class="section-title">Pricing Information</div>
@@ -317,35 +319,94 @@
         </form>
     </div>
 
-    <script>
-        // Auto-calculate fields
-        const quantity = document.getElementById('quantity');
-        const suppliersPrice = document.getElementById('suppliersPrice');
-        const namUnitPrice = document.getElementById('namUnitPrice');
-        const totalActual = document.getElementById('totalActual');
-        const totalNam = document.getElementById('totalNam');
-        const income = document.getElementById('income');
-        const incomePercent = document.getElementById('incomePercent');
+   <script>
+    // --- 1. EXISTING CALCULATION LOGIC ---
+    const quantity = document.getElementById('quantity');
+    const suppliersPrice = document.getElementById('suppliersPrice');
+    const namUnitPrice = document.getElementById('namUnitPrice');
+    const totalActual = document.getElementById('totalActual');
+    const totalNam = document.getElementById('totalNam');
+    const income = document.getElementById('income');
+    const incomePercent = document.getElementById('incomePercent');
 
-        function calculate() {
-            const qty = parseFloat(quantity.value) || 0;
-            const supplierPrice = parseFloat(suppliersPrice.value) || 0;
-            const namPrice = parseFloat(namUnitPrice.value) || 0;
+    function calculate() {
+        const qty = parseFloat(quantity.value) || 0;
+        const supplierPrice = parseFloat(suppliersPrice.value) || 0;
+        const namPrice = parseFloat(namUnitPrice.value) || 0;
 
-            const totalActualAmt = qty * supplierPrice;
-            const totalNamAmt = qty * namPrice;
-            const incomeAmt = totalNamAmt - totalActualAmt;
-            const incomePercentAmt = totalNamAmt > 0 ? (incomeAmt / totalNamAmt) * 100 : 0;
+        const totalActualAmt = qty * supplierPrice;
+        const totalNamAmt = qty * namPrice;
+        const incomeAmt = totalNamAmt - totalActualAmt;
+        const incomePercentAmt = totalNamAmt > 0 ? (incomeAmt / totalNamAmt) * 100 : 0;
 
-            totalActual.value = totalActualAmt.toFixed(2);
-            totalNam.value = totalNamAmt.toFixed(2);
-            income.value = incomeAmt.toFixed(2);
-            incomePercent.value = incomePercentAmt.toFixed(2);
-        }
+        totalActual.value = totalActualAmt.toFixed(2);
+        totalNam.value = totalNamAmt.toFixed(2);
+        income.value = incomeAmt.toFixed(2);
+        incomePercent.value = incomePercentAmt.toFixed(2);
+    }
 
-        quantity.addEventListener('input', calculate);
-        suppliersPrice.addEventListener('input', calculate);
-        namUnitPrice.addEventListener('input', calculate);
-    </script>
+    quantity.addEventListener('input', calculate);
+    suppliersPrice.addEventListener('input', calculate);
+    namUnitPrice.addEventListener('input', calculate);
+
+    // --- 2. NEW: AUTO-SEARCH FUNCTIONALITY ---
+    const itemInput = document.getElementById('itemInput');
+    const itemList = document.getElementById('itemList');
+
+    // Listen for typing to show suggestions
+    itemInput.addEventListener('input', function() {
+        const val = this.value;
+        
+        // If user clears the input, don't search
+        if (val.length < 2) return; 
+
+        fetch(`get_item.php?q=${encodeURIComponent(val)}`)
+            .then(response => response.json())
+            .then(data => {
+                itemList.innerHTML = '';
+                data.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.value;
+                    itemList.appendChild(option);
+                });
+                
+                // Check if user selected an exact match
+                checkForExactMatch(val);
+            })
+            .catch(err => console.error("Error fetching items:", err));
+    });
+
+    // Check database for prices when item is selected
+    function checkForExactMatch(val) {
+        fetch(`get_item.php?exact=${encodeURIComponent(val)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data) {
+                    console.log("Item found:", data);
+                    
+                    // 1. Auto-fill Prices
+                    if(data.supplier_price) document.getElementById('suppliersPrice').value = data.supplier_price;
+                    if(data.nam_price) document.getElementById('namUnitPrice').value = data.nam_price;
+                    
+                    // 2. Auto-select Category
+                    const catSelect = document.querySelector('select[name="category"]');
+                    for (let i = 0; i < catSelect.options.length; i++) {
+                        // Compare ignoring case just in case
+                        if (catSelect.options[i].value.toUpperCase() === data.category_code.toUpperCase()) {
+                            catSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+
+                    // 3. Auto-fill Supplier
+                    const supplierInput = document.querySelector('input[name="supplier"]');
+                    if(supplierInput && data.supplier) supplierInput.value = data.supplier;
+
+                    // 4. Trigger calculation
+                    calculate();
+                }
+            });
+    }
+</script>
 </body>
 </html>

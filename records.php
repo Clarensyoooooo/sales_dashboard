@@ -403,17 +403,53 @@
                 gap: 10px;
             }
         }
+
+        /* KPI Card Styles */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 25px;
+}
+
+.kpi-card {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border-left: 5px solid #0078d4; /* Default Blue */
+    display: flex;
+    flex-direction: column;
+}
+
+.kpi-card.success { border-left-color: #107c10; } /* Green */
+.kpi-card.warning { border-left-color: #d13438; } /* Red/Orange */
+
+.kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #605e5c;
+    text-transform: uppercase;
+    margin-bottom: 5px;
+}
+
+.kpi-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #323130;
+}
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📋 Sales Records Management</h1>
-            <div style="display: flex; gap: 10px;">
-                <a href="index.php" class="btn btn-secondary">📊 Dashboard</a>
-                <a href="form.php" class="btn btn-primary">➕ Add New</a>
-            </div>
-        </div>
+    <h1>📋 Sales Records Management</h1>
+    <div style="display: flex; gap: 10px;">
+        <a href="index.php" class="btn btn-secondary">📊 Dashboard</a>
+        <a href="products.php" class="btn btn-secondary">📦 Price List</a>
+        <a href="form.php" class="btn btn-primary">➕ Add New</a>
+    </div>
+</div>
 
         <div class="alert alert-success" id="successAlert"></div>
         <div class="alert alert-error" id="errorAlert"></div>
@@ -454,20 +490,20 @@
         </div>
 
         <!-- Stats Bar -->
-        <div class="stats-bar">
-            <div class="stats-item">
-                <span>Total Records:</span>
-                <span class="stats-value" id="totalRecords">0</span>
-            </div>
-            <div class="stats-item">
-                <span>Filtered Total Sales:</span>
-                <span class="stats-value" id="filteredSales">₱0.00</span>
-            </div>
-            <div class="stats-item">
-                <span>Filtered Total Profit:</span>
-                <span class="stats-value" id="filteredProfit">₱0.00</span>
-            </div>
-        </div>
+       <div class="kpi-grid">
+    <div class="kpi-card">
+        <span class="kpi-label">Total Records</span>
+        <span class="kpi-value" id="totalRecords">0</span>
+    </div>
+    <div class="kpi-card success">
+        <span class="kpi-label">Total Sales (Filtered)</span>
+        <span class="kpi-value" id="filteredSales">₱0.00</span>
+    </div>
+    <div class="kpi-card success">
+        <span class="kpi-label">Total Profit (Filtered)</span>
+        <span class="kpi-value" id="filteredProfit">₱0.00</span>
+    </div>
+</div>
 
         <!-- Table -->
         <div class="table-container">
@@ -765,9 +801,15 @@
 
         // Edit record
         function editRecord(id) {
-            const record = allRecords.find(r => r.id === id);
-            if (!record) return;
+            // FIX: Use == instead of === to allow matching string ID with number ID
+            const record = allRecords.find(r => r.id == id);
+            
+            if (!record) {
+                console.error("Record not found for ID:", id);
+                return;
+            }
 
+            // Populate the modal fields
             document.getElementById('editId').value = record.id;
             document.getElementById('editDate').value = record.date;
             document.getElementById('editSN').value = record.sn || '';
@@ -781,7 +823,10 @@
             document.getElementById('editSupplier').value = record.supplier || '';
             document.getElementById('editRemarks').value = record.remarks || '';
 
+            // Recalculate totals based on the loaded values
             calculateEdit();
+            
+            // Show the modal
             document.getElementById('editModal').classList.add('active');
         }
 

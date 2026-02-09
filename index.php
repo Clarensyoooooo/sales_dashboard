@@ -299,22 +299,27 @@
                 <span style="font-weight:400; font-size: 16px; color: var(--text-light); margin-left: 10px;">| Sales Dashboard</span>
             </h1>
             <div style="display: flex; gap: 12px;">
-                <a href="records.php" class="btn btn-secondary">📋 View Records</a>
-                <a href="form.php" class="btn btn-primary">➕ Add Entry</a>
-            </div>
+    <a href="products.php" class="btn btn-secondary">📦 Price List</a>
+    <a href="records.php" class="btn btn-secondary">📋 View Records</a>
+    <a href="form.php" class="btn btn-primary">➕ Add Entry</a>
+</div>
         </div>
 
         <div class="filter-bar">
             <div class="filter-group">
-                <label>Time Period</label>
-                <select id="periodFilter" class="filter-input" onchange="handlePeriodChange()">
-                    <option value="today">Daily (Today)</option>
-                    <option value="week">Weekly (This Week)</option>
-                    <option value="month" selected>Monthly (This Month)</option>
-                    <option value="year">Yearly (This Year)</option>
-                    <option value="all">All Time</option>
-                </select>
-            </div>
+    <label>Time Period</label>
+    <div style="display: flex; gap: 10px;">
+        <select id="periodFilter" class="filter-input" onchange="handlePeriodChange()">
+            <option value="today">Daily (Today)</option>
+            <option value="week">Weekly (This Week)</option>
+            <option value="month" selected>Monthly (This Month)</option>
+            <option value="custom_month">📅 Specific Month</option> <option value="quarter">Quarterly (This Year)</option>
+            <option value="year">Yearly (This Year)</option>
+            <option value="all">All Time</option>
+        </select>
+        <input type="month" id="monthPicker" class="filter-input" style="display:none;" onchange="updateDashboard()">
+    </div>
+</div>
 
             <div class="filter-group">
                 <label>Filter Company</label>
@@ -394,248 +399,261 @@
     </div>
 
     <script>
-        // Formatting Helpers
-        const formatMoney = (num) => '₱' + parseFloat(num).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        const formatLarge = (num) => {
-            if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
-            if(num >= 1000) return '₱' + (num/1000).toFixed(0) + 'K';
-            return formatMoney(num);
-        };
+    // Formatting Helpers
+    const formatMoney = (num) => '₱' + parseFloat(num).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const formatLarge = (num) => {
+        if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
+        if(num >= 1000) return '₱' + (num/1000).toFixed(0) + 'K';
+        return formatMoney(num);
+    };
 
-        // Chart Instances
-        let dailyChartInst, companyChartInst;
+    let dailyChartInst, companyChartInst;
 
-        // --- 1. Date Logic ---
-        function getDateRange(period) {
-            const now = new Date();
-            const today = now.toISOString().split('T')[0];
-            let start = '', end = today;
-
-            if (period === 'today') {
-                start = today;
-            } else if (period === 'week') {
-                // Calculate Start of Week (Sunday)
-                const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
-                start = firstDay.toISOString().split('T')[0];
-            } else if (period === 'month') {
-                // Start of Month
-                start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            } else if (period === 'year') {
-                // Start of Year
-                start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            } else {
-                // All Time (Empty strings act as no filter)
-                return { start: '', end: '' };
+    function handlePeriodChange() {
+        const period = document.getElementById('periodFilter').value;
+        const picker = document.getElementById('monthPicker');
+        
+        // Show/Hide Month Picker
+        if (period === 'custom_month') {
+            picker.style.display = 'block';
+            // Auto-select previous month if empty
+            if (!picker.value) {
+                const now = new Date();
+                // Go back 1 month for convenience
+                now.setMonth(now.getMonth() - 1); 
+                const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                picker.value = `${now.getFullYear()}-${month}`;
             }
-            return { start, end };
+        } else {
+            picker.style.display = 'none';
         }
+        
+        // Auto-update dashboard when switching modes
+        updateDashboard();
+    }
 
-        function handlePeriodChange() {
-            // Optional: Automatically trigger update when dropdown changes
-            // updateDashboard(); 
-            // Currently, user must click "Apply Filters", but you can uncomment above to make it instant.
-        }
+    async function updateDashboard() {
+        const period = document.getElementById('periodFilter').value;
+        const company = document.getElementById('companyFilter').value;
+        const target = parseFloat(document.getElementById('targetSales').value) || 0;
 
-        // --- 2. Main Fetch Function ---
-        async function updateDashboard() {
-            const period = document.getElementById('periodFilter').value;
-            const dates = getDateRange(period);
-            const company = document.getElementById('companyFilter').value;
-            const target = parseFloat(document.getElementById('targetSales').value) || 0;
+        // --- 1. Determine Dates & Grouping ---
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        let start = '', end = today, groupBy = 'day';
 
-            // Build API URL
-            const url = `api.php?start_date=${dates.start}&end_date=${dates.end}&company=${encodeURIComponent(company)}`;
-
-            try {
-                const res = await fetch(url);
-                const data = await res.json();
-
-                // Update KPIs
-                document.getElementById('totalSales').textContent = formatLarge(data.stats.total_sales);
-                document.getElementById('totalProfit').textContent = formatLarge(data.stats.total_profit);
-                document.getElementById('profitMargin').textContent = data.stats.profit_margin.toFixed(2) + '%';
-
-                // Render Visuals
-                renderCharts(data.daily_sales, data.company_sales, target);
-                renderMatrix(data.category_matrix);
-
-                // Populate Company Dropdown (Only on first load)
-                populateCompanyDropdown(data.companies);
-
-            } catch (err) {
-                console.error("Error loading dashboard data:", err);
+        if (period === 'today') {
+            start = today;
+            groupBy = 'day';
+        } else if (period === 'week') {
+            const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
+            start = firstDay.toISOString().split('T')[0];
+            groupBy = 'day';
+        } else if (period === 'month') {
+            start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            groupBy = 'day';
+        } else if (period === 'quarter') {
+            // Start of Year for Quarterly View
+            start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+            groupBy = 'quarter'; 
+        } else if (period === 'year') {
+            start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
+            groupBy = 'month'; // Show months for the year
+            } else if (period === 'custom_month') {
+            // Get value from the month picker
+            const val = document.getElementById('monthPicker').value;
+            if (val) {
+                const [y, m] = val.split('-');
+                start = `${y}-${m}-01`;
+                // Get last day of that month (using 0th day of next month trick)
+                end = new Date(y, m, 0).toISOString().split('T')[0];
+                groupBy = 'day'; // Show daily trend for that specific month
             }
+        } else {
+            // All Time
+            start = ''; end = '';
+            groupBy = 'year'; // Show years for all time
         }
 
-        function populateCompanyDropdown(companies) {
-            const select = document.getElementById('companyFilter');
-            // Check if populated (length > 1 because of default 'All' option)
-            if (select.options.length <= 1) {
-                companies.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c;
-                    opt.textContent = c;
-                    select.appendChild(opt);
-                });
-            }
+        // --- 2. Fetch Data ---
+        const url = `api.php?start_date=${start}&end_date=${end}&company=${encodeURIComponent(company)}&group_by=${groupBy}`;
+
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+
+            // Update KPIs
+            document.getElementById('totalSales').textContent = formatLarge(data.stats.total_sales);
+            document.getElementById('totalProfit').textContent = formatLarge(data.stats.total_profit);
+            document.getElementById('profitMargin').textContent = data.stats.profit_margin.toFixed(2) + '%';
+
+            // Render Charts
+            renderCharts(data.chart_data, data.company_sales, target); // Use chart_data
+            renderMatrix(data.category_matrix);
+
+            // Populate Dropdown
+            populateCompanyDropdown(data.companies);
+
+        } catch (err) {
+            console.error("Error loading dashboard data:", err);
         }
+    }
 
-        // --- 3. Render Charts ---
-        function renderCharts(dailyData, companyData, targetValue) {
-            const ctx1 = document.getElementById('dailyChart').getContext('2d');
-            const ctx2 = document.getElementById('companyChart').getContext('2d');
+    function populateCompanyDropdown(companies) {
+        const select = document.getElementById('companyFilter');
+        if (select.options.length <= 1) {
+            companies.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.textContent = c;
+                select.appendChild(opt);
+            });
+        }
+    }
 
-            if (dailyChartInst) dailyChartInst.destroy();
-            if (companyChartInst) companyChartInst.destroy();
+    function renderCharts(chartData, companyData, targetValue) {
+        const ctx1 = document.getElementById('dailyChart').getContext('2d');
+        const ctx2 = document.getElementById('companyChart').getContext('2d');
 
-            // --- A. Daily Trend (Dual Axis Combo) ---
-            dailyChartInst = new Chart(ctx1, {
-                type: 'bar',
-                data: {
-                    labels: dailyData.map(d => 'Day ' + d.day),
-                    datasets: [
-                        {
-                            type: 'line',
-                            label: 'Target Goal',
-                            data: Array(dailyData.length).fill(targetValue),
-                            borderColor: '#10b981', // Green
-                            borderWidth: 2,
-                            borderDash: [6, 4],
-                            pointRadius: 0,
-                            order: 1,
-                            yAxisID: 'y'
-                        },
-                        {
-                            type: 'line',
-                            label: 'Profit Margin %',
-                            data: dailyData.map(d => d.margin),
-                            borderColor: '#f97316', // Orange
-                            backgroundColor: '#f97316',
-                            borderWidth: 2,
-                            tension: 0.3,
-                            yAxisID: 'y1',
-                            order: 0
-                        },
-                        {
-                            type: 'bar',
-                            label: 'Sales Amount',
-                            data: dailyData.map(d => d.sales),
-                            backgroundColor: 'rgba(37, 99, 235, 0.75)', // Blue
-                            hoverBackgroundColor: 'rgba(37, 99, 235, 1)',
-                            order: 2,
-                            yAxisID: 'y'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: { legend: { display: false } }, // Custom legend used in title
-                    scales: {
-                        y: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            grid: { borderDash: [5, 5] },
-                            title: { display: true, text: 'Sales (₱)' }
-                        },
-                        y1: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            grid: { drawOnChartArea: false },
-                            ticks: { callback: v => v + '%' },
-                            title: { display: true, text: 'Margin (%)' }
-                        },
-                        x: { grid: { display: false } }
+        if (dailyChartInst) dailyChartInst.destroy();
+        if (companyChartInst) companyChartInst.destroy();
+
+        // --- Chart 1: Sales Trend (Dynamic Labels) ---
+        dailyChartInst = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: chartData.map(d => d.label), // Uses dynamic labels (e.g. "Jan", "Q1", "2025")
+                datasets: [
+                    {
+                        type: 'line',
+                        label: 'Target Goal',
+                        data: Array(chartData.length).fill(targetValue),
+                        borderColor: '#10b981',
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        pointRadius: 0,
+                        order: 1,
+                        yAxisID: 'y'
+                    },
+                    {
+                        type: 'line',
+                        label: 'Profit Margin %',
+                        data: chartData.map(d => d.margin),
+                        borderColor: '#f97316',
+                        backgroundColor: '#f97316',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        yAxisID: 'y1',
+                        order: 0
+                    },
+                    {
+                        type: 'bar',
+                        label: 'Sales Amount',
+                        data: chartData.map(d => d.sales),
+                        backgroundColor: 'rgba(37, 99, 235, 0.75)',
+                        hoverBackgroundColor: 'rgba(37, 99, 235, 1)',
+                        order: 2,
+                        yAxisID: 'y'
                     }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        grid: { borderDash: [5, 5] },
+                        title: { display: true, text: 'Sales (₱)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        ticks: { callback: v => v + '%' },
+                        title: { display: true, text: 'Margin (%)' }
+                    },
+                    x: { grid: { display: false } }
                 }
-            });
-
-            // --- B. Company Chart (Dynamic Height) ---
-            // Logic: 30px height per company, minimum 400px.
-            const neededHeight = Math.max(400, companyData.length * 35);
-            document.getElementById('companyChartWrapper').style.height = neededHeight + 'px';
-
-            companyChartInst = new Chart(ctx2, {
-                type: 'bar',
-                data: {
-                    labels: companyData.map(c => c.company),
-                    datasets: [{
-                        label: 'Total Sales',
-                        data: companyData.map(c => c.total_sales),
-                        backgroundColor: '#3b82f6',
-                        borderRadius: 4,
-                        barPercentage: 0.6
-                    }]
-                },
-                options: {
-                    indexAxis: 'y', // Horizontal Bar
-                    responsive: true,
-                    maintainAspectRatio: false, // Vital for scrollable container
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { display: false },
-                        y: { 
-                            grid: { display: false },
-                            ticks: { font: { size: 11 } }
-                        }
-                    }
-                }
-            });
-        }
-
-        // --- 4. Render Matrix Table ---
-        function renderMatrix(data) {
-            const tbody = document.getElementById('matrixBody');
-            tbody.innerHTML = '';
-
-            data.forEach((cat, index) => {
-                // 1. Parent Row (Category)
-                const parentRow = document.createElement('tr');
-                parentRow.className = 'category-row';
-                parentRow.innerHTML = `
-                    <td><span class="toggle-icon">▶</span> ${cat.category}</td>
-                    <td style="text-align: right;">${cat.quantity.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight:700;">${formatMoney(cat.total_sales)}</td>
-                    <td style="text-align: right; color: #059669; font-weight:600;">${formatMoney(cat.total_profit)}</td>
-                `;
-
-                // Toggle Logic
-                parentRow.onclick = function() {
-                    this.classList.toggle('expanded');
-                    const siblings = document.querySelectorAll(`.child-${index}`);
-                    siblings.forEach(r => r.classList.toggle('visible'));
-                };
-                tbody.appendChild(parentRow);
-
-                // 2. Child Rows (Items)
-                cat.items.forEach(item => {
-                    const childRow = document.createElement('tr');
-                    childRow.className = `item-row child-${index}`;
-                    childRow.innerHTML = `
-                        <td>${item.name}</td>
-                        <td style="text-align: right;">${item.qty.toLocaleString()}</td>
-                        <td style="text-align: right;">${formatMoney(item.sales)}</td>
-                        <td style="text-align: right;">${formatMoney(item.profit)}</td>
-                    `;
-                    tbody.appendChild(childRow);
-                });
-            });
-        }
-
-        function resetFilters() {
-            document.getElementById('periodFilter').value = 'month';
-            document.getElementById('companyFilter').value = '';
-            document.getElementById('targetSales').value = '50000';
-            updateDashboard();
-        }
-
-        // --- Init ---
-        document.addEventListener('DOMContentLoaded', () => {
-            updateDashboard();
+            }
         });
 
-    </script>
+        // --- Chart 2: Company Breakdown (Unchanged) ---
+        const neededHeight = Math.max(400, companyData.length * 35);
+        document.getElementById('companyChartWrapper').style.height = neededHeight + 'px';
+
+        companyChartInst = new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: companyData.map(c => c.company),
+                datasets: [{
+                    label: 'Total Sales',
+                    data: companyData.map(c => c.total_sales),
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 4,
+                    barPercentage: 0.6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { display: false },
+                    y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                }
+            }
+        });
+    }
+
+    function renderMatrix(data) {
+        const tbody = document.getElementById('matrixBody');
+        tbody.innerHTML = '';
+
+        data.forEach((cat, index) => {
+            const parentRow = document.createElement('tr');
+            parentRow.className = 'category-row';
+            parentRow.innerHTML = `
+                <td><span class="toggle-icon">▶</span> ${cat.category}</td>
+                <td style="text-align: right;">${cat.quantity.toLocaleString()}</td>
+                <td style="text-align: right; font-weight:700;">${formatMoney(cat.total_sales)}</td>
+                <td style="text-align: right; color: #059669; font-weight:600;">${formatMoney(cat.total_profit)}</td>
+            `;
+            parentRow.onclick = function() {
+                this.classList.toggle('expanded');
+                document.querySelectorAll(`.child-${index}`).forEach(r => r.classList.toggle('visible'));
+            };
+            tbody.appendChild(parentRow);
+
+            cat.items.forEach(item => {
+                const childRow = document.createElement('tr');
+                childRow.className = `item-row child-${index}`;
+                childRow.innerHTML = `
+                    <td>${item.name}</td>
+                    <td style="text-align: right;">${item.qty.toLocaleString()}</td>
+                    <td style="text-align: right;">${formatMoney(item.sales)}</td>
+                    <td style="text-align: right;">${formatMoney(item.profit)}</td>
+                `;
+                tbody.appendChild(childRow);
+            });
+        });
+    }
+
+    function resetFilters() {
+        document.getElementById('periodFilter').value = 'month';
+        document.getElementById('companyFilter').value = '';
+        document.getElementById('targetSales').value = '50000';
+        updateDashboard();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        updateDashboard();
+    });
+</script>
 </body>
 </html>
