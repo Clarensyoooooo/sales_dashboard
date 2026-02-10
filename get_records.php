@@ -4,27 +4,8 @@ require_once 'config.php';
 
 $conn = getDBConnection();
 
-// Get all records
-$sql = "SELECT 
-    id,
-    date,
-    sn,
-    po_number,
-    company,
-    category,
-    item,
-    quantity_requested,
-    suppliers_price,
-    total_actual_amount,
-    nam_unit_price,
-    total_nam_amount,
-    income,
-    income_percent,
-    supplier,
-    remarks,
-    created_at
-FROM sales
-ORDER BY date DESC, id DESC";
+// CHANGED: Select * to get ALL fields (PO, Delivered Date, Terms, Contact info, etc.)
+$sql = "SELECT * FROM sales ORDER BY date DESC, id DESC";
 
 $result = $conn->query($sql);
 

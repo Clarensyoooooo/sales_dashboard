@@ -5,456 +5,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sales Records - NAM Supply</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f3f2f1;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1800px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 2px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-
-        h1 {
-            color: #323130;
-            font-size: 28px;
-            font-weight: 600;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 2px;
-            cursor: pointer;
-            font-size: 14px;
-            text-decoration: none;
-            display: inline-block;
-            font-weight: 600;
-            transition: background 0.3s;
-        }
-
-        .btn-primary {
-            background: #0078d4;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #106ebe;
-        }
-
-        .btn-secondary {
-            background: #f3f2f1;
-            color: #323130;
-            border: 1px solid #8a8886;
-        }
-
-        .btn-secondary:hover {
-            background: #e1dfdd;
-        }
-
-        .btn-success {
-            background: #107c10;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #0e6b0e;
-        }
-
-        .btn-danger {
-            background: #d13438;
-            color: white;
-            padding: 5px 10px;
-            font-size: 12px;
-        }
-
-        .btn-danger:hover {
-            background: #a4262c;
-        }
-
-        .btn-edit {
-            background: #0078d4;
-            color: white;
-            padding: 5px 10px;
-            font-size: 12px;
-            margin-right: 5px;
-        }
-
-        .btn-edit:hover {
-            background: #106ebe;
-        }
-
-        .filter-section {
-            background: #faf9f8;
-            padding: 20px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            border: 1px solid #edebe9;
-        }
-
-        .filter-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .filter-group label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #323130;
-            margin-bottom: 5px;
-        }
-
-        .filter-group input,
-        .filter-group select {
-            padding: 8px;
-            border: 1px solid #8a8886;
-            border-radius: 2px;
-            font-size: 14px;
-        }
-
-        .filter-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .stats-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px;
-            background: #f3f2f1;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        .stats-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .stats-value {
-            font-weight: 700;
-            color: #0078d4;
-        }
-
-        .table-container {
-            overflow-x: auto;
-            border: 1px solid #edebe9;
-            border-radius: 4px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        thead {
-            position: sticky;
-            top: 0;
-            background: #f3f2f1;
-            z-index: 10;
-        }
-
-        th {
-            padding: 12px 10px;
-            text-align: left;
-            font-weight: 600;
-            color: #323130;
-            border-bottom: 2px solid #0078d4;
-            white-space: nowrap;
-        }
-
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #f3f2f1;
-            color: #323130;
-        }
-
-        tbody tr:hover {
-            background: #faf9f8;
-        }
-
-        .pagination {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 10px;
-            margin-top: 20px;
-            padding: 20px;
-        }
-
-        .pagination button {
-            padding: 8px 15px;
-            border: 1px solid #8a8886;
-            background: white;
-            cursor: pointer;
-            border-radius: 2px;
-        }
-
-        .pagination button:hover:not(:disabled) {
-            background: #f3f2f1;
-        }
-
-        .pagination button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .pagination .page-info {
-            padding: 8px 15px;
-            color: #605e5c;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f2f1; padding: 20px; }
+        .container { max-width: 100%; margin: 0 auto; background: white; padding: 30px; border-radius: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
+        h1 { color: #323130; font-size: 28px; font-weight: 600; }
+        .btn { padding: 10px 20px; border: none; border-radius: 2px; cursor: pointer; font-size: 14px; text-decoration: none; display: inline-block; font-weight: 600; transition: background 0.3s; }
+        .btn-primary { background: #0078d4; color: white; }
+        .btn-primary:hover { background: #106ebe; }
+        .btn-secondary { background: #f3f2f1; color: #323130; border: 1px solid #8a8886; }
+        .btn-secondary:hover { background: #e1dfdd; }
+        .btn-success { background: #107c10; color: white; }
+        .btn-success:hover { background: #0e6b0e; }
+        .btn-danger { background: #d13438; color: white; padding: 5px 10px; font-size: 12px; }
+        .btn-danger:hover { background: #a4262c; }
+        .btn-edit { background: #0078d4; color: white; padding: 5px 10px; font-size: 12px; margin-right: 5px; }
+        .btn-edit:hover { background: #106ebe; }
+        .filter-section { background: #faf9f8; padding: 20px; border-radius: 4px; margin-bottom: 20px; border: 1px solid #edebe9; }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .filter-group { display: flex; flex-direction: column; }
+        .filter-group label { font-size: 12px; font-weight: 600; color: #323130; margin-bottom: 5px; }
+        .filter-group input, .filter-group select { padding: 8px; border: 1px solid #8a8886; border-radius: 2px; font-size: 14px; }
+        .filter-actions { display: flex; gap: 10px; margin-top: 15px; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .kpi-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-left: 5px solid #0078d4; display: flex; flex-direction: column; }
+        .kpi-card.success { border-left-color: #107c10; }
+        .kpi-label { font-size: 12px; font-weight: 600; color: #605e5c; text-transform: uppercase; margin-bottom: 5px; }
+        .kpi-value { font-size: 28px; font-weight: 700; color: #323130; }
+        
+        /* Table Styles */
+        .table-container { overflow-x: auto; border: 1px solid #edebe9; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        thead { position: sticky; top: 0; background: #f3f2f1; z-index: 10; }
+        th { padding: 10px 8px; text-align: left; font-weight: 600; color: #323130; border-bottom: 2px solid #0078d4; white-space: nowrap; }
+        td { padding: 8px; border-bottom: 1px solid #f3f2f1; color: #323130; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+        tbody tr:hover { background: #faf9f8; }
+        
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px; padding: 20px; }
+        .pagination button { padding: 8px 15px; border: 1px solid #8a8886; background: white; cursor: pointer; border-radius: 2px; }
+        .pagination button:hover:not(:disabled) { background: #f3f2f1; }
+        .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination .page-info { padding: 8px 15px; color: #605e5c; }
 
         /* Modal Styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            overflow-y: auto;
-        }
-
-        .modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 4px;
-            max-width: 800px;
-            width: 100%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #0078d4;
-        }
-
-        .modal-header h2 {
-            color: #323130;
-            font-size: 24px;
-        }
-
-        .close-btn {
-            font-size: 28px;
-            cursor: pointer;
-            color: #605e5c;
-            background: none;
-            border: none;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .close-btn:hover {
-            color: #323130;
-        }
-
-        .form-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .form-group.full-width {
-            grid-column: 1 / -1;
-        }
-
-        .form-group label {
-            font-size: 14px;
-            font-weight: 600;
-            color: #323130;
-            margin-bottom: 5px;
-        }
-
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            padding: 8px;
-            border: 1px solid #8a8886;
-            border-radius: 2px;
-            font-size: 14px;
-        }
-
-        .form-group textarea {
-            resize: vertical;
-            min-height: 60px;
-        }
-
-        .calculated-field {
-            background: #f3f2f1;
-            font-weight: 600;
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #edebe9;
-        }
-
-        .alert {
-            padding: 12px 20px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            display: none;
-        }
-
-        .alert.show {
-            display: block;
-        }
-
-        .alert-success {
-            background: #dff6dd;
-            color: #107c10;
-            border: 1px solid #107c10;
-        }
-
-        .alert-error {
-            background: #fde7e9;
-            color: #a4262c;
-            border: 1px solid #a4262c;
-        }
-
-        .no-data {
-            text-align: center;
-            padding: 40px;
-            color: #605e5c;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #605e5c;
-        }
-
-        @media (max-width: 768px) {
-            .form-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .filter-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .header {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .stats-bar {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 10px;
-            }
-        }
-
-        /* KPI Card Styles */
-.kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-bottom: 25px;
-}
-
-.kpi-card {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    border-left: 5px solid #0078d4; /* Default Blue */
-    display: flex;
-    flex-direction: column;
-}
-
-.kpi-card.success { border-left-color: #107c10; } /* Green */
-.kpi-card.warning { border-left-color: #d13438; } /* Red/Orange */
-
-.kpi-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #605e5c;
-    text-transform: uppercase;
-    margin-bottom: 5px;
-}
-
-.kpi-value {
-    font-size: 28px;
-    font-weight: 700;
-    color: #323130;
-}
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto; }
+        .modal.active { display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .modal-content { background: white; padding: 30px; border-radius: 4px; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #0078d4; }
+        .modal-header h2 { color: #323130; font-size: 24px; }
+        .close-btn { font-size: 28px; cursor: pointer; color: #605e5c; background: none; border: none; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group label { font-size: 14px; font-weight: 600; color: #323130; margin-bottom: 5px; }
+        .form-group input, .form-group select, .form-group textarea { padding: 8px; border: 1px solid #8a8886; border-radius: 2px; font-size: 14px; }
+        .form-group textarea { resize: vertical; min-height: 60px; }
+        .calculated-field { background: #f3f2f1; font-weight: 600; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid #edebe9; }
+        .alert { padding: 12px 20px; border-radius: 4px; margin-bottom: 20px; display: none; }
+        .alert.show { display: block; }
+        .alert-success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+        .alert-error { background: #fde7e9; color: #a4262c; border: 1px solid #a4262c; }
+        .no-data { text-align: center; padding: 40px; color: #605e5c; }
+        .loading { text-align: center; padding: 40px; color: #605e5c; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-    <h1>📋 Sales Records Management</h1>
-    <div style="display: flex; gap: 10px;">
-        <a href="index.php" class="btn btn-secondary">📊 Dashboard</a>
-        <a href="products.php" class="btn btn-secondary">📦 Price List</a>
-        <a href="form.php" class="btn btn-primary">➕ Add New</a>
-    </div>
-</div>
+            <h1>📋 Sales Records Management</h1>
+            <div style="display: flex; gap: 10px;">
+                <a href="index.php" class="btn btn-secondary">📊 Dashboard</a>
+                <a href="products.php" class="btn btn-secondary">📦 Price List</a>
+                <a href="form.php" class="btn btn-primary">➕ Add New</a>
+            </div>
+        </div>
 
         <div class="alert alert-success" id="successAlert"></div>
         <div class="alert alert-error" id="errorAlert"></div>
 
-        <!-- Filter Section -->
         <div class="filter-section">
             <h3 style="margin-bottom: 15px; color: #323130;">🔍 Filters</h3>
             <div class="filter-grid">
@@ -489,40 +118,50 @@
             </div>
         </div>
 
-        <!-- Stats Bar -->
-       <div class="kpi-grid">
-    <div class="kpi-card">
-        <span class="kpi-label">Total Records</span>
-        <span class="kpi-value" id="totalRecords">0</span>
-    </div>
-    <div class="kpi-card success">
-        <span class="kpi-label">Total Sales (Filtered)</span>
-        <span class="kpi-value" id="filteredSales">₱0.00</span>
-    </div>
-    <div class="kpi-card success">
-        <span class="kpi-label">Total Profit (Filtered)</span>
-        <span class="kpi-value" id="filteredProfit">₱0.00</span>
-    </div>
-</div>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-label">Total Records</span>
+                <span class="kpi-value" id="totalRecords">0</span>
+            </div>
+            <div class="kpi-card success">
+                <span class="kpi-label">Total Sales (Filtered)</span>
+                <span class="kpi-value" id="filteredSales">₱0.00</span>
+            </div>
+            <div class="kpi-card success">
+                <span class="kpi-label">Total Profit (Filtered)</span>
+                <span class="kpi-value" id="filteredProfit">₱0.00</span>
+            </div>
+        </div>
 
-        <!-- Table -->
         <div class="table-container">
             <div class="loading" id="loading">Loading records...</div>
             <table id="recordsTable" style="display: none;">
                 <thead>
                     <tr>
+                        <th>Actions</th>
                         <th>Date</th>
                         <th>S/N</th>
+                        <th>PO Number</th>
                         <th>Company</th>
                         <th>Category</th>
                         <th>Item</th>
                         <th>Qty</th>
-                        <th>Supplier Price</th>
+                        <th>Supplier</th>
+                        <th>Supp. Price</th>
+                        <th>Total Cost</th>
                         <th>NAM Price</th>
                         <th>Total Sales</th>
                         <th>Income</th>
                         <th>Profit %</th>
-                        <th>Actions</th>
+                        <th>Delivered</th>
+                        <th>Payment Term</th>
+                        <th>Due Date</th>
+                        <th>SI Number</th>
+                        <th>Sales Invoice</th>
+                        <th>Address</th>
+                        <th>TIN</th>
+                        <th>Contact</th>
+                        <th>Remarks</th>
                     </tr>
                 </thead>
                 <tbody id="recordsBody">
@@ -533,7 +172,6 @@
             </div>
         </div>
 
-        <!-- Pagination -->
         <div class="pagination" id="pagination" style="display: none;">
             <button onclick="changePage('first')">⏮️ First</button>
             <button onclick="changePage('prev')">◀️ Prev</button>
@@ -543,7 +181,6 @@
         </div>
     </div>
 
-    <!-- Edit Modal -->
     <div class="modal" id="editModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -640,7 +277,6 @@
         let allRecords = [];
         let filteredRecords = [];
 
-        // Format currency
         function formatCurrency(value) {
             return '₱' + parseFloat(value || 0).toLocaleString('en-PH', {
                 minimumFractionDigits: 2,
@@ -648,7 +284,6 @@
             });
         }
 
-        // Load records
         async function loadRecords() {
             try {
                 document.getElementById('loading').style.display = 'block';
@@ -659,11 +294,7 @@
                 const data = await response.json();
                 
                 allRecords = data.records;
-                
-                // Populate filter dropdowns
                 populateFilters(data.companies, data.categories);
-                
-                // Apply initial filters
                 applyFilters();
                 
             } catch (error) {
@@ -672,11 +303,14 @@
             }
         }
 
-        // Populate filter dropdowns
         function populateFilters(companies, categories) {
             const companySelect = document.getElementById('filterCompany');
             const categorySelect = document.getElementById('filterCategory');
             
+            // Clear existing options except first one
+            companySelect.innerHTML = '<option value="">All Companies</option>';
+            categorySelect.innerHTML = '<option value="">All Categories</option>';
+
             companies.forEach(company => {
                 const option = document.createElement('option');
                 option.value = company;
@@ -692,7 +326,6 @@
             });
         }
 
-        // Apply filters
         function applyFilters() {
             const dateFrom = document.getElementById('dateFrom').value;
             const dateTo = document.getElementById('dateTo').value;
@@ -702,13 +335,11 @@
 
             filteredRecords = allRecords.filter(record => {
                 let match = true;
-                
                 if (dateFrom && record.date < dateFrom) match = false;
                 if (dateTo && record.date > dateTo) match = false;
                 if (company && record.company !== company) match = false;
                 if (category && record.category !== category) match = false;
                 if (searchItem && !record.item.toLowerCase().includes(searchItem)) match = false;
-                
                 return match;
             });
 
@@ -716,7 +347,6 @@
             displayRecords();
         }
 
-        // Clear filters
         function clearFilters() {
             document.getElementById('dateFrom').value = '';
             document.getElementById('dateTo').value = '';
@@ -726,7 +356,6 @@
             applyFilters();
         }
 
-        // Display records
         function displayRecords() {
             const tbody = document.getElementById('recordsBody');
             tbody.innerHTML = '';
@@ -747,22 +376,35 @@
 
             pageRecords.forEach(record => {
                 const row = document.createElement('tr');
+                // Added ALL fields to the row HTML
                 row.innerHTML = `
+                    <td style="white-space: nowrap;">
+                        <button class="btn btn-edit" onclick="editRecord(${record.id})">✏️</button>
+                        <button class="btn btn-danger" onclick="deleteRecord(${record.id})">🗑️</button>
+                    </td>
                     <td>${record.date || ''}</td>
                     <td>${record.sn || ''}</td>
+                    <td>${record.po_number || ''}</td>
                     <td>${record.company || ''}</td>
                     <td>${record.category || ''}</td>
-                    <td>${record.item || ''}</td>
+                    <td title="${record.item || ''}">${record.item || ''}</td>
                     <td>${record.quantity_requested || 0}</td>
+                    <td>${record.supplier || ''}</td>
                     <td>${formatCurrency(record.suppliers_price)}</td>
+                    <td>${formatCurrency(record.total_actual_amount)}</td>
                     <td>${formatCurrency(record.nam_unit_price)}</td>
                     <td><strong>${formatCurrency(record.total_nam_amount)}</strong></td>
                     <td><strong>${formatCurrency(record.income)}</strong></td>
                     <td>${parseFloat(record.income_percent || 0).toFixed(2)}%</td>
-                    <td style="white-space: nowrap;">
-                        <button class="btn btn-edit" onclick="editRecord(${record.id})">✏️ Edit</button>
-                        <button class="btn btn-danger" onclick="deleteRecord(${record.id})">🗑️ Delete</button>
-                    </td>
+                    <td>${record.date_delivered || ''}</td>
+                    <td>${record.payment_term || ''}</td>
+                    <td>${record.due_date || ''}</td>
+                    <td>${record.si_number || ''}</td>
+                    <td>${record.sales_invoice_no || ''}</td>
+                    <td title="${record.address || ''}">${record.address || ''}</td>
+                    <td>${record.tin || ''}</td>
+                    <td title="${record.contact_person_contact || ''}">${record.contact_person_contact || ''}</td>
+                    <td title="${record.remarks || ''}">${record.remarks || ''}</td>
                 `;
                 tbody.appendChild(row);
             });
@@ -778,7 +420,6 @@
             updateStats();
         }
 
-        // Update statistics
         function updateStats() {
             const totalRecords = filteredRecords.length;
             const totalSales = filteredRecords.reduce((sum, r) => sum + parseFloat(r.total_nam_amount || 0), 0);
@@ -789,27 +430,18 @@
             document.getElementById('filteredProfit').textContent = formatCurrency(totalProfit);
         }
 
-        // Change page
         function changePage(action) {
             if (action === 'first') currentPage = 1;
             else if (action === 'prev' && currentPage > 1) currentPage--;
             else if (action === 'next' && currentPage < totalPages) currentPage++;
             else if (action === 'last') currentPage = totalPages;
-            
             displayRecords();
         }
 
-        // Edit record
         function editRecord(id) {
-            // FIX: Use == instead of === to allow matching string ID with number ID
             const record = allRecords.find(r => r.id == id);
-            
-            if (!record) {
-                console.error("Record not found for ID:", id);
-                return;
-            }
+            if (!record) return;
 
-            // Populate the modal fields
             document.getElementById('editId').value = record.id;
             document.getElementById('editDate').value = record.date;
             document.getElementById('editSN').value = record.sn || '';
@@ -822,15 +454,10 @@
             document.getElementById('editNAMPrice').value = record.nam_unit_price || 0;
             document.getElementById('editSupplier').value = record.supplier || '';
             document.getElementById('editRemarks').value = record.remarks || '';
-
-            // Recalculate totals based on the loaded values
             calculateEdit();
-            
-            // Show the modal
             document.getElementById('editModal').classList.add('active');
         }
 
-        // Calculate edit form
         function calculateEdit() {
             const qty = parseFloat(document.getElementById('editQuantity').value) || 0;
             const supplierPrice = parseFloat(document.getElementById('editSupplierPrice').value) || 0;
@@ -847,11 +474,10 @@
             document.getElementById('editIncomePercent').value = incomePercent.toFixed(2);
         }
 
-        // Save edit
         async function saveEdit(event) {
             event.preventDefault();
-
             const formData = new FormData();
+            // Append standard fields for now (can expand if update_record.php supports it)
             formData.append('id', document.getElementById('editId').value);
             formData.append('date', document.getElementById('editDate').value);
             formData.append('sn', document.getElementById('editSN').value);
@@ -866,13 +492,8 @@
             formData.append('remarks', document.getElementById('editRemarks').value);
 
             try {
-                const response = await fetch('update_record.php', {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch('update_record.php', { method: 'POST', body: formData });
                 const result = await response.json();
-
                 if (result.success) {
                     showAlert('Record updated successfully!', 'success');
                     closeModal();
@@ -886,23 +507,15 @@
             }
         }
 
-        // Delete record
         async function deleteRecord(id) {
-            if (!confirm('Are you sure you want to delete this record? This action cannot be undone.')) {
-                return;
-            }
-
+            if (!confirm('Are you sure?')) return;
             try {
                 const response = await fetch('delete_record.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'id=' + id
                 });
-
                 const result = await response.json();
-
                 if (result.success) {
                     showAlert('Record deleted successfully!', 'success');
                     loadRecords();
@@ -911,35 +524,19 @@
                 }
             } catch (error) {
                 showAlert('Error deleting record', 'error');
-                console.error(error);
             }
         }
 
-        // Close modal
-        function closeModal() {
-            document.getElementById('editModal').classList.remove('active');
-        }
-
-        // Show alert
+        function closeModal() { document.getElementById('editModal').classList.remove('active'); }
         function showAlert(message, type) {
             const alertId = type === 'success' ? 'successAlert' : 'errorAlert';
             const alertEl = document.getElementById(alertId);
             alertEl.textContent = message;
             alertEl.classList.add('show');
-            
-            setTimeout(() => {
-                alertEl.classList.remove('show');
-            }, 5000);
+            setTimeout(() => { alertEl.classList.remove('show'); }, 5000);
         }
+        document.getElementById('editModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
 
-        // Close modal when clicking outside
-        document.getElementById('editModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-
-        // Initial load
         loadRecords();
     </script>
 </body>
