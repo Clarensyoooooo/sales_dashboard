@@ -168,10 +168,14 @@
             letter-spacing: 0.05em;
         }
 
-        /* --- Charts Grid --- */
-        .charts-grid {
+        /* --- Charts Layout --- */
+        .full-width-chart {
+            margin-bottom: 20px;
+        }
+
+        .breakdown-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr; /* 2/3 for Trend, 1/3 for Companies */
+            grid-template-columns: 1fr 1fr;
             gap: 20px;
             margin-bottom: 20px;
         }
@@ -183,6 +187,7 @@
             box-shadow: var(--shadow);
             display: flex;
             flex-direction: column;
+            height: 100%;
         }
 
         .card-title {
@@ -203,18 +208,33 @@
             font-weight: 400;
         }
 
+        /* Sales Chart Container (FIXED HEIGHT) */
+        .sales-chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
         /* Company Chart Scroll Container */
         .scrollable-chart-container {
             overflow-y: auto;
-            max-height: 400px; /* Limits height and enables scroll */
+            max-height: 400px;
             position: relative;
-            padding-right: 10px; /* Space for scrollbar */
+            padding-right: 10px;
         }
         
-        /* Custom Scrollbar for Chrome/Safari */
         .scrollable-chart-container::-webkit-scrollbar { width: 6px; }
         .scrollable-chart-container::-webkit-scrollbar-track { background: #f1f1f1; }
         .scrollable-chart-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        /* Donut Chart Container */
+        .donut-container {
+            position: relative;
+            height: 350px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
 
         /* --- Matrix Table --- */
         .matrix-table {
@@ -262,30 +282,28 @@
         }
         .category-row.expanded .toggle-icon { transform: rotate(90deg); background: var(--primary); color: white; }
 
-        /* Child Rows (Items) */
+        /* Child Rows */
         .item-row {
             display: none;
             background: #f8fafc;
             font-size: 13px;
             color: #475569;
         }
-        
         .item-row td:first-child {
-            padding-left: 50px; /* Indent items */
+            padding-left: 50px;
             border-left: 3px solid var(--primary);
         }
-
         .item-row.visible {
             display: table-row;
             animation: fadeIn 0.3s ease;
         }
-
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 
         /* Responsive */
         @media (max-width: 1024px) {
-            .charts-grid { grid-template-columns: 1fr; }
+            .breakdown-grid { grid-template-columns: 1fr; }
             .scrollable-chart-container { max-height: 300px; }
+            .donut-container { height: 300px; }
         }
     </style>
 </head>
@@ -299,33 +317,34 @@
                 <span style="font-weight:400; font-size: 16px; color: var(--text-light); margin-left: 10px;">| Sales Dashboard</span>
             </h1>
             <div style="display: flex; gap: 12px;">
-    <a href="products.php" class="btn btn-secondary">📦 Price List</a>
-    <a href="records.php" class="btn btn-secondary">📋 View Records</a>
-    <a href="form.php" class="btn btn-primary">➕ Add Entry</a>
-</div>
+                <a href="products.php" class="btn btn-secondary">📦 Price List</a>
+                <a href="records.php" class="btn btn-secondary">📋 View Records</a>
+                <a href="form.php" class="btn btn-primary">➕ Add Entry</a>
+            </div>
         </div>
 
         <div class="filter-bar">
             <div class="filter-group">
-    <label>Time Period</label>
-    <div style="display: flex; gap: 10px;">
-        <select id="periodFilter" class="filter-input" onchange="handlePeriodChange()">
-            <option value="today">Daily (Today)</option>
-            <option value="week">Weekly (This Week)</option>
-            <option value="month" selected>Monthly (This Month)</option>
-            <option value="custom_month">📅 Specific Month</option> <option value="quarter">Quarterly (This Year)</option>
-            <option value="year">Yearly (This Year)</option>
-            <option value="all">All Time</option>
-        </select>
-        <input type="month" id="monthPicker" class="filter-input" style="display:none;" onchange="updateDashboard()">
-    </div>
-</div>
+                <label>Time Period</label>
+                <div style="display: flex; gap: 10px;">
+                    <select id="periodFilter" class="filter-input" onchange="handlePeriodChange()">
+                        <option value="today">Daily (Today)</option>
+                        <option value="week">Weekly (This Week)</option>
+                        <option value="month" selected>Monthly (This Month)</option>
+                        <option value="custom_month">📅 Specific Month</option>
+                        <option value="quarter">Quarterly (This Year)</option>
+                        <option value="year">Yearly (This Year)</option>
+                        <option value="all">All Time</option>
+                    </select>
+                    <input type="month" id="monthPicker" class="filter-input" style="display:none;" onchange="updateDashboard()">
+                </div>
+            </div>
 
             <div class="filter-group">
                 <label>Filter Company</label>
                 <select id="companyFilter" class="filter-input" style="min-width: 200px;">
                     <option value="">All Companies</option>
-                    </select>
+                </select>
             </div>
 
             <div class="filter-group">
@@ -352,27 +371,39 @@
             </div>
         </div>
 
-        <div class="charts-grid">
-            <div class="card">
-                <div class="card-title">
-                    <span>📈 Sales Performance vs Target</span>
-                    <span class="subtitle">
-                        <span style="color:#10b981; font-weight:bold;">-- Target</span> &nbsp;|&nbsp; 
-                        <span style="color:#f97316; font-weight:bold;">— Margin</span>
-                    </span>
-                </div>
-                <canvas id="dailyChart" height="120"></canvas>
+        <div class="card full-width-chart">
+            <div class="card-title">
+                <span>📈 Sales Performance vs Target</span>
+                <span class="subtitle">
+                    <span style="color:#10b981; font-weight:bold;">-- Target</span> &nbsp;|&nbsp; 
+                    <span style="color:#f97316; font-weight:bold;">— Margin</span>
+                </span>
             </div>
+            <div class="sales-chart-container">
+                <canvas id="dailyChart"></canvas>
+            </div>
+        </div>
 
+        <div class="breakdown-grid">
             <div class="card">
                 <div class="card-title">
                     <span>🏢 Company Breakdown</span>
-                    <span class="subtitle">Sorted by Sales</span>
+                    <span class="subtitle">Click a bar to filter</span>
                 </div>
                 <div class="scrollable-chart-container">
                     <div id="companyChartWrapper" style="width: 100%; height: 400px;">
                         <canvas id="companyChart"></canvas>
                     </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>🍩 Sales by Category</span>
+                    <span class="subtitle">Distribution of Sales</span>
+                </div>
+                <div class="donut-container">
+                    <canvas id="categoryChart"></canvas>
                 </div>
             </div>
         </div>
@@ -391,15 +422,13 @@
                         <th width="20%" style="text-align: right;">Total Profit</th>
                     </tr>
                 </thead>
-                <tbody id="matrixBody">
-                    </tbody>
+                <tbody id="matrixBody"></tbody>
             </table>
         </div>
 
     </div>
 
     <script>
-    // Formatting Helpers
     const formatMoney = (num) => '₱' + parseFloat(num).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const formatLarge = (num) => {
         if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
@@ -407,19 +436,32 @@
         return formatMoney(num);
     };
 
-    let dailyChartInst, companyChartInst;
+    // --- NEW VIBRANT PALETTE ---
+    const donutColors = [
+        '#3b82f6', // Blue
+        '#ef4444', // Red
+        '#10b981', // Green
+        '#f59e0b', // Amber
+        '#8b5cf6', // Violet
+        '#ec4899', // Pink
+        '#06b6d4', // Cyan
+        '#f97316', // Orange
+        '#6366f1', // Indigo
+        '#84cc16', // Lime
+        '#14b8a6', // Teal
+        '#d946ef'  // Fuchsia
+    ];
+
+    let dailyChartInst, companyChartInst, categoryChartInst;
 
     function handlePeriodChange() {
         const period = document.getElementById('periodFilter').value;
         const picker = document.getElementById('monthPicker');
         
-        // Show/Hide Month Picker
         if (period === 'custom_month') {
             picker.style.display = 'block';
-            // Auto-select previous month if empty
             if (!picker.value) {
                 const now = new Date();
-                // Go back 1 month for convenience
                 now.setMonth(now.getMonth() - 1); 
                 const month = (now.getMonth() + 1).toString().padStart(2, '0');
                 picker.value = `${now.getFullYear()}-${month}`;
@@ -428,7 +470,6 @@
             picker.style.display = 'none';
         }
         
-        // Auto-update dashboard when switching modes
         updateDashboard();
     }
 
@@ -437,7 +478,6 @@
         const company = document.getElementById('companyFilter').value;
         const target = parseFloat(document.getElementById('targetSales').value) || 0;
 
-        // --- 1. Determine Dates & Grouping ---
         const now = new Date();
         const today = now.toISOString().split('T')[0];
         let start = '', end = today, groupBy = 'day';
@@ -453,45 +493,36 @@
             start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
             groupBy = 'day';
         } else if (period === 'quarter') {
-            // Start of Year for Quarterly View
             start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
             groupBy = 'quarter'; 
         } else if (period === 'year') {
             start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            groupBy = 'month'; // Show months for the year
-            } else if (period === 'custom_month') {
-            // Get value from the month picker
+            groupBy = 'month';
+        } else if (period === 'custom_month') {
             const val = document.getElementById('monthPicker').value;
             if (val) {
                 const [y, m] = val.split('-');
                 start = `${y}-${m}-01`;
-                // Get last day of that month (using 0th day of next month trick)
                 end = new Date(y, m, 0).toISOString().split('T')[0];
-                groupBy = 'day'; // Show daily trend for that specific month
+                groupBy = 'day';
             }
         } else {
-            // All Time
             start = ''; end = '';
-            groupBy = 'year'; // Show years for all time
+            groupBy = 'year';
         }
 
-        // --- 2. Fetch Data ---
         const url = `api.php?start_date=${start}&end_date=${end}&company=${encodeURIComponent(company)}&group_by=${groupBy}`;
 
         try {
             const res = await fetch(url);
             const data = await res.json();
 
-            // Update KPIs
             document.getElementById('totalSales').textContent = formatLarge(data.stats.total_sales);
             document.getElementById('totalProfit').textContent = formatLarge(data.stats.total_profit);
             document.getElementById('profitMargin').textContent = data.stats.profit_margin.toFixed(2) + '%';
 
-            // Render Charts
-            renderCharts(data.chart_data, data.company_sales, target); // Use chart_data
+            renderCharts(data.chart_data, data.company_sales, data.category_matrix, target);
             renderMatrix(data.category_matrix);
-
-            // Populate Dropdown
             populateCompanyDropdown(data.companies);
 
         } catch (err) {
@@ -511,18 +542,20 @@
         }
     }
 
-    function renderCharts(chartData, companyData, targetValue) {
+    function renderCharts(chartData, companyData, categoryData, targetValue) {
         const ctx1 = document.getElementById('dailyChart').getContext('2d');
         const ctx2 = document.getElementById('companyChart').getContext('2d');
+        const ctx3 = document.getElementById('categoryChart').getContext('2d');
 
         if (dailyChartInst) dailyChartInst.destroy();
         if (companyChartInst) companyChartInst.destroy();
+        if (categoryChartInst) categoryChartInst.destroy();
 
-        // --- Chart 1: Sales Trend (Dynamic Labels) ---
+        // 1. Sales Trend
         dailyChartInst = new Chart(ctx1, {
             type: 'bar',
             data: {
-                labels: chartData.map(d => d.label), // Uses dynamic labels (e.g. "Jan", "Q1", "2025")
+                labels: chartData.map(d => d.label),
                 datasets: [
                     {
                         type: 'line',
@@ -559,6 +592,7 @@
             },
             options: {
                 responsive: true,
+                maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { display: false } },
                 scales: {
@@ -582,7 +616,7 @@
             }
         });
 
-        // --- Chart 2: Company Breakdown (Unchanged) ---
+        // 2. Company Breakdown (Bar)
         const neededHeight = Math.max(400, companyData.length * 35);
         document.getElementById('companyChartWrapper').style.height = neededHeight + 'px';
 
@@ -606,6 +640,55 @@
                 scales: {
                     x: { display: false },
                     y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                },
+                onClick: (e, elements) => {
+                    const select = document.getElementById('companyFilter');
+                    const currentFilter = select.value;
+
+                    if (elements.length > 0) {
+                        const index = elements[0].index;
+                        const companyName = companyChartInst.data.labels[index];
+                        select.value = (currentFilter === companyName) ? "" : companyName;
+                    } else {
+                        select.value = "";
+                    }
+                    updateDashboard();
+                },
+                onHover: (event, chartElement) => {
+                    event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
+                }
+            }
+        });
+
+        // 3. Category Breakdown (Donut)
+        categoryChartInst = new Chart(ctx3, {
+            type: 'doughnut',
+            data: {
+                labels: categoryData.map(c => c.category),
+                datasets: [{
+                    data: categoryData.map(c => c.total_sales),
+                    backgroundColor: donutColors,
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { boxWidth: 12, font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                let value = context.parsed;
+                                return label + ': ' + formatMoney(value);
+                            }
+                        }
+                    }
                 }
             }
         });
