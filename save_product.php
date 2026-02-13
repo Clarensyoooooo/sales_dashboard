@@ -11,8 +11,11 @@ $unit = $_POST['unit'];
 $supplier = $_POST['supplier'];
 $s_price = $_POST['supplier_price'];
 $n_price = $_POST['nam_price'];
+// New Fields
+$stock = $_POST['current_stock'] ?? 0;
+$reorder = $_POST['reorder_level'] ?? 10;
 
-// Calculate margin automatically
+// Calculate margin
 if ($n_price > 0) {
     $marginVal = (($n_price - $s_price) / $n_price) * 100;
     $margin = number_format($marginVal, 2) . '%';
@@ -21,13 +24,13 @@ if ($n_price > 0) {
 }
 
 if (!empty($id)) {
-    // UPDATE
-    $stmt = $conn->prepare("UPDATE products SET name=?, category_code=?, unit=?, supplier=?, supplier_price=?, nam_price=?, margin=? WHERE id=?");
-    $stmt->bind_param("ssssddsi", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $id);
+    // UPDATE with new columns
+    $stmt = $conn->prepare("UPDATE products SET name=?, category_code=?, unit=?, supplier=?, supplier_price=?, nam_price=?, margin=?, current_stock=?, reorder_level=? WHERE id=?");
+    $stmt->bind_param("ssssddssii", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder, $id);
 } else {
-    // INSERT
-    $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ssssdds", $name, $category, $unit, $supplier, $s_price, $n_price, $margin);
+    // INSERT with new columns
+    $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ssssddssi", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder);
 }
 
 if ($stmt->execute()) {

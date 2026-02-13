@@ -4,7 +4,7 @@ require_once 'config.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conn = getDBConnection();
     
-    // Clean and prepare data
+    // [Existing data collection code remains the same...]
     $date = $_POST['date'];
     $sn = $_POST['sn'];
     $po_number = $_POST['po_number'];
@@ -15,16 +15,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $suppliers_price = floatval($_POST['suppliers_price']);
     $nam_unit_price = floatval($_POST['nam_unit_price']);
     
-    // Calculate amounts
+    // Calculations
     $total_actual_amount = $suppliers_price * $quantity_requested;
     $total_nam_amount = $nam_unit_price * $quantity_requested;
     $income = $total_nam_amount - $total_actual_amount;
-    
-    if ($total_nam_amount > 0) {
-        $income_percent = ($income / $total_nam_amount) * 100;
-    } else {
-        $income_percent = 0;
-    }
+    $income_percent = ($total_nam_amount > 0) ? ($income / $total_nam_amount) * 100 : 0;
     
     // Optional fields
     $date_delivered = !empty($_POST['date_delivered']) ? $_POST['date_delivered'] : null;
@@ -38,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sales_invoice_no = $_POST['sales_invoice_no'] ?? '';
     $contact_person_contact = $_POST['contact_person_contact'] ?? '';
     
+    // 1. Insert the Sale (Standard)
     $sql = "INSERT INTO sales (
         date, sn, po_number, company, category, item, quantity_requested,
         suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount,
@@ -55,6 +51,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
     
     if ($stmt->execute()) {
+        // --- NEW: INVENTORY UPDATE LOGIC ---
+        // Subtract the sold quantity from the products table
+        // This links the name in the form to the name in the products table
+        $updateStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
+        $updateStock->bind_param("is", $quantity_requested, $item);
+        $updateStock->execute();
+        $updateStock->close();
+        // -----------------------------------
+
         header('Location: index.php?success=1');
     } else {
         header('Location: form.php?error=1');

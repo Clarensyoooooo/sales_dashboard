@@ -1,4 +1,6 @@
+<?php require_once 'config.php'; requireLogin(); requirePermission('view_dashboard'); ?>
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -18,6 +20,7 @@
             --text-light: #6b7280;    /* Light Text */
             --border: #e5e7eb;        /* Border Color */
             --success: #10b981;       /* Green */
+            --danger: #ef4444;        /* Red */
             --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             --radius: 12px;
         }
@@ -138,7 +141,7 @@
         /* --- KPI Cards --- */
         .kpi-container {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin-bottom: 20px;
         }
@@ -168,14 +171,15 @@
             letter-spacing: 0.05em;
         }
 
-        /* --- Charts Layout --- */
+        /* --- Layout Grids --- */
         .full-width-chart {
             margin-bottom: 20px;
         }
 
         .breakdown-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            /* Adjusted for 3 items if needed, or stick to 2 and wrap */
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
             gap: 20px;
             margin-bottom: 20px;
         }
@@ -208,14 +212,13 @@
             font-weight: 400;
         }
 
-        /* Sales Chart Container (FIXED HEIGHT) */
+        /* Chart Containers */
         .sales-chart-container {
             position: relative;
             height: 300px;
             width: 100%;
         }
 
-        /* Company Chart Scroll Container */
         .scrollable-chart-container {
             overflow-y: auto;
             max-height: 400px;
@@ -227,7 +230,6 @@
         .scrollable-chart-container::-webkit-scrollbar-track { background: #f1f1f1; }
         .scrollable-chart-container::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
 
-        /* Donut Chart Container */
         .donut-container {
             position: relative;
             height: 350px;
@@ -235,6 +237,32 @@
             justify-content: center;
             align-items: center;
         }
+
+        /* --- Low Stock List Styles --- */
+        .alert-list {
+            max-height: 350px;
+            overflow-y: auto;
+        }
+        .alert-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--bg);
+        }
+        .alert-item:last-child { border-bottom: none; }
+        .alert-info { display: flex; flex-direction: column; gap: 2px; }
+        .alert-name { font-weight: 600; font-size: 14px; color: var(--text-main); }
+        .alert-sub { font-size: 11px; color: var(--text-light); }
+        .alert-badge { 
+            padding: 4px 10px; 
+            border-radius: 6px; 
+            font-size: 12px; 
+            font-weight: 700;
+            background: #fee2e2; 
+            color: #991b1b;
+        }
+        .alert-badge.out { background: #fecaca; color: #7f1d1d; }
 
         /* --- Matrix Table --- */
         .matrix-table {
@@ -258,7 +286,6 @@
             color: var(--text-main);
         }
 
-        /* Parent Rows */
         .category-row {
             cursor: pointer;
             font-weight: 600;
@@ -282,46 +309,65 @@
         }
         .category-row.expanded .toggle-icon { transform: rotate(90deg); background: var(--primary); color: white; }
 
-        /* Child Rows */
-        .item-row {
-            display: none;
-            background: #f8fafc;
-            font-size: 13px;
-            color: #475569;
-        }
-        .item-row td:first-child {
-            padding-left: 50px;
-            border-left: 3px solid var(--primary);
-        }
-        .item-row.visible {
-            display: table-row;
-            animation: fadeIn 0.3s ease;
-        }
+        /* --- Nested Table Styles --- */
+.details-row td { 
+    padding: 0 !important; 
+    border-bottom: 1px solid #e5e7eb; 
+    background-color: #f8fafc;
+}
+
+.nested-container {
+    max-height: 400px;       /* The "Smart" Part: Limits height */
+    overflow-y: auto;        /* Adds scrollbar only if needed */
+    padding: 15px 20px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Custom Scrollbar for the nested area */
+.nested-container::-webkit-scrollbar { width: 6px; }
+.nested-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+
+.nested-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.nested-search { 
+    width: 100%; 
+    max-width: 300px;
+    padding: 8px 12px; 
+    border: 1px solid #d1d5db; 
+    border-radius: 6px; 
+    font-size: 13px;
+    background: white;
+}
+.nested-search:focus { outline: none; border-color: var(--primary); }
+
+.nested-table { width: 100%; border-collapse: collapse; }
+.nested-table td { 
+    padding: 8px 0; 
+    border-bottom: 1px solid #e2e8f0; 
+    color: #4b5563; 
+    font-size: 13px; 
+}
+.nested-table tr:last-child td { border-bottom: none; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Responsive */
         @media (max-width: 1024px) {
             .breakdown-grid { grid-template-columns: 1fr; }
-            .scrollable-chart-container { max-height: 300px; }
-            .donut-container { height: 300px; }
         }
     </style>
 </head>
 <body>
 
-    <div class="dashboard-container">
-        
-        <div class="header">
-            <h1>
-                🚀 NAM Supply 
-                <span style="font-weight:400; font-size: 16px; color: var(--text-light); margin-left: 10px;">| Sales Dashboard</span>
-            </h1>
-            <div style="display: flex; gap: 12px;">
-                <a href="products.php" class="btn btn-secondary">📦 Price List</a>
-                <a href="records.php" class="btn btn-secondary">📋 View Records</a>
-                <a href="form.php" class="btn btn-primary">➕ Add Entry</a>
-            </div>
-        </div>
+    <?php include 'navbar.php'; ?>
+
+    <div class="dashboard-container" style="margin-top: 20px;">
 
         <div class="filter-bar">
             <div class="filter-group">
@@ -369,6 +415,10 @@
                 <div class="kpi-label">Profit Margin</div>
                 <div class="kpi-value" id="profitMargin" style="color: #c2410c;">0%</div>
             </div>
+            <div class="kpi-card" style="border-left-color: var(--danger);">
+                <div class="kpi-label">Items Low Stock</div>
+                <div class="kpi-value" id="lowStockCount" style="color: var(--danger);">0</div>
+            </div>
         </div>
 
         <div class="card full-width-chart">
@@ -386,9 +436,19 @@
 
         <div class="breakdown-grid">
             <div class="card">
+                <div class="card-title" style="border-bottom-color: #fee2e2;">
+                    <span style="color: #991b1b;">⚠️ Restock Needed</span>
+                    <a href="products.php" style="font-size:12px; color:var(--primary); text-decoration:none;">Manage Stock &rarr;</a>
+                </div>
+                <div class="alert-list" id="stockAlertList">
+                    <div style="text-align:center; padding: 20px; color:#9ca3af;">Loading alerts...</div>
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="card-title">
                     <span>🏢 Company Breakdown</span>
-                    <span class="subtitle">Click a bar to filter</span>
+                    <span class="subtitle">Top Clients</span>
                 </div>
                 <div class="scrollable-chart-container">
                     <div id="companyChartWrapper" style="width: 100%; height: 400px;">
@@ -400,7 +460,6 @@
             <div class="card">
                 <div class="card-title">
                     <span>🍩 Sales by Category</span>
-                    <span class="subtitle">Distribution of Sales</span>
                 </div>
                 <div class="donut-container">
                     <canvas id="categoryChart"></canvas>
@@ -417,7 +476,7 @@
                 <thead>
                     <tr>
                         <th width="40%">Category / Item</th>
-                        <th width="15%" style="text-align: right;">Qty</th>
+                        <th width="15%" style="text-align: right;">Qty Sold</th>
                         <th width="20%" style="text-align: right;">Total Sales</th>
                         <th width="20%" style="text-align: right;">Total Profit</th>
                     </tr>
@@ -436,22 +495,7 @@
         return formatMoney(num);
     };
 
-    // --- NEW VIBRANT PALETTE ---
-    const donutColors = [
-        '#3b82f6', // Blue
-        '#ef4444', // Red
-        '#10b981', // Green
-        '#f59e0b', // Amber
-        '#8b5cf6', // Violet
-        '#ec4899', // Pink
-        '#06b6d4', // Cyan
-        '#f97316', // Orange
-        '#6366f1', // Indigo
-        '#84cc16', // Lime
-        '#14b8a6', // Teal
-        '#d946ef'  // Fuchsia
-    ];
-
+    const donutColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#84cc16', '#14b8a6', '#d946ef'];
     let dailyChartInst, companyChartInst, categoryChartInst;
 
     function handlePeriodChange() {
@@ -469,11 +513,59 @@
         } else {
             picker.style.display = 'none';
         }
-        
         updateDashboard();
     }
 
+    // MAIN UPDATE FUNCTION
     async function updateDashboard() {
+        // 1. Fetch Sales Data
+        await fetchSalesData();
+        // 2. Fetch Inventory Data
+        await fetchInventoryData();
+    }
+
+    async function fetchInventoryData() {
+        try {
+            const res = await fetch('get_all_products.php');
+            const products = await res.json();
+            
+            // Filter Low Stock
+            const lowStock = products.filter(p => parseInt(p.current_stock || 0) <= parseInt(p.reorder_level || 10));
+            
+            // Update KPI
+            document.getElementById('lowStockCount').textContent = lowStock.length;
+
+            // Update Widget
+            const list = document.getElementById('stockAlertList');
+            if(lowStock.length === 0) {
+                list.innerHTML = `<div style="text-align:center; padding:40px; color:#10b981;">✅ All stock levels healthy!</div>`;
+                return;
+            }
+
+            let html = '';
+            lowStock.forEach(p => {
+                const stock = parseInt(p.current_stock);
+                const isOut = stock <= 0;
+                html += `
+                    <div class="alert-item">
+                        <div class="alert-info">
+                            <span class="alert-name">${p.name}</span>
+                            <span class="alert-sub">${p.supplier || 'No Supplier'} • Alert at ${p.reorder_level}</span>
+                        </div>
+                        <span class="alert-badge ${isOut ? 'out' : ''}">
+                            ${isOut ? 'OUT OF STOCK' : stock + ' left'}
+                        </span>
+                    </div>
+                `;
+            });
+            list.innerHTML = html;
+
+        } catch(e) {
+            console.error("Inventory error:", e);
+        }
+    }
+
+    async function fetchSalesData() {
         const period = document.getElementById('periodFilter').value;
         const company = document.getElementById('companyFilter').value;
         const target = parseFloat(document.getElementById('targetSales').value) || 0;
@@ -482,34 +574,24 @@
         const today = now.toISOString().split('T')[0];
         let start = '', end = today, groupBy = 'day';
 
-        if (period === 'today') {
-            start = today;
-            groupBy = 'day';
-        } else if (period === 'week') {
-            const firstDay = new Date(now.setDate(now.getDate() - now.getDay()));
-            start = firstDay.toISOString().split('T')[0];
-            groupBy = 'day';
-        } else if (period === 'month') {
-            start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-            groupBy = 'day';
-        } else if (period === 'quarter') {
-            start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            groupBy = 'quarter'; 
-        } else if (period === 'year') {
-            start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-            groupBy = 'month';
-        } else if (period === 'custom_month') {
+        // Time logic (simplified for brevity, same as original)
+        if (period === 'today') { start = today; }
+        else if (period === 'week') { 
+            const d = new Date(now); d.setDate(d.getDate() - d.getDay()); 
+            start = d.toISOString().split('T')[0]; 
+        }
+        else if (period === 'month') { start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]; }
+        else if (period === 'quarter') { start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; groupBy = 'quarter'; }
+        else if (period === 'year') { start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; groupBy = 'month'; }
+        else if (period === 'custom_month') {
             const val = document.getElementById('monthPicker').value;
             if (val) {
                 const [y, m] = val.split('-');
                 start = `${y}-${m}-01`;
                 end = new Date(y, m, 0).toISOString().split('T')[0];
-                groupBy = 'day';
             }
-        } else {
-            start = ''; end = '';
-            groupBy = 'year';
         }
+        else { groupBy = 'year'; } // All time
 
         const url = `api.php?start_date=${start}&end_date=${end}&company=${encodeURIComponent(company)}&group_by=${groupBy}`;
 
@@ -526,7 +608,7 @@
             populateCompanyDropdown(data.companies);
 
         } catch (err) {
-            console.error("Error loading dashboard data:", err);
+            console.error("Sales data error:", err);
         }
     }
 
@@ -558,65 +640,31 @@
                 labels: chartData.map(d => d.label),
                 datasets: [
                     {
-                        type: 'line',
-                        label: 'Target Goal',
-                        data: Array(chartData.length).fill(targetValue),
-                        borderColor: '#10b981',
-                        borderWidth: 2,
-                        borderDash: [6, 4],
-                        pointRadius: 0,
-                        order: 1,
-                        yAxisID: 'y'
+                        type: 'line', label: 'Target', data: Array(chartData.length).fill(targetValue),
+                        borderColor: '#10b981', borderWidth: 2, borderDash: [6, 4], pointRadius: 0, order: 1, yAxisID: 'y'
                     },
                     {
-                        type: 'line',
-                        label: 'Profit Margin %',
-                        data: chartData.map(d => d.margin),
-                        borderColor: '#f97316',
-                        backgroundColor: '#f97316',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        yAxisID: 'y1',
-                        order: 0
+                        type: 'line', label: 'Margin %', data: chartData.map(d => d.margin),
+                        borderColor: '#f97316', backgroundColor: '#f97316', borderWidth: 2, tension: 0.3, yAxisID: 'y1', order: 0
                     },
                     {
-                        type: 'bar',
-                        label: 'Sales Amount',
-                        data: chartData.map(d => d.sales),
-                        backgroundColor: 'rgba(37, 99, 235, 0.75)',
-                        hoverBackgroundColor: 'rgba(37, 99, 235, 1)',
-                        order: 2,
-                        yAxisID: 'y'
+                        type: 'bar', label: 'Sales', data: chartData.map(d => d.sales),
+                        backgroundColor: 'rgba(37, 99, 235, 0.75)', hoverBackgroundColor: 'rgba(37, 99, 235, 1)', order: 2, yAxisID: 'y'
                     }
                 ]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
+                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { display: false } },
                 scales: {
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        grid: { borderDash: [5, 5] },
-                        title: { display: true, text: 'Sales (₱)' }
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        grid: { drawOnChartArea: false },
-                        ticks: { callback: v => v + '%' },
-                        title: { display: true, text: 'Margin (%)' }
-                    },
+                    y: { type: 'linear', display: true, position: 'left', grid: { borderDash: [5, 5] } },
+                    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } },
                     x: { grid: { display: false } }
                 }
             }
         });
 
-        // 2. Company Breakdown (Bar)
+        // 2. Company Breakdown
         const neededHeight = Math.max(400, companyData.length * 35);
         document.getElementById('companyChartWrapper').style.height = neededHeight + 'px';
 
@@ -624,108 +672,127 @@
             type: 'bar',
             data: {
                 labels: companyData.map(c => c.company),
-                datasets: [{
-                    label: 'Total Sales',
-                    data: companyData.map(c => c.total_sales),
-                    backgroundColor: '#3b82f6',
-                    borderRadius: 4,
-                    barPercentage: 0.6
-                }]
+                datasets: [{ label: 'Total Sales', data: companyData.map(c => c.total_sales), backgroundColor: '#3b82f6', borderRadius: 4, barPercentage: 0.6 }]
             },
             options: {
-                indexAxis: 'y',
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { display: false },
-                    y: { grid: { display: false }, ticks: { font: { size: 11 } } }
-                },
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+                scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } },
                 onClick: (e, elements) => {
                     const select = document.getElementById('companyFilter');
-                    const currentFilter = select.value;
-
                     if (elements.length > 0) {
-                        const index = elements[0].index;
-                        const companyName = companyChartInst.data.labels[index];
-                        select.value = (currentFilter === companyName) ? "" : companyName;
-                    } else {
-                        select.value = "";
-                    }
+                        const idx = elements[0].index;
+                        const name = companyChartInst.data.labels[idx];
+                        select.value = (select.value === name) ? "" : name;
+                    } else { select.value = ""; }
                     updateDashboard();
                 },
-                onHover: (event, chartElement) => {
-                    event.native.target.style.cursor = chartElement[0] ? 'pointer' : 'default';
-                }
+                onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
             }
         });
 
-        // 3. Category Breakdown (Donut)
+        // 3. Category Breakdown
         categoryChartInst = new Chart(ctx3, {
             type: 'doughnut',
             data: {
                 labels: categoryData.map(c => c.category),
-                datasets: [{
-                    data: categoryData.map(c => c.total_sales),
-                    backgroundColor: donutColors,
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
+                datasets: [{ data: categoryData.map(c => c.total_sales), backgroundColor: donutColors, borderWidth: 2, borderColor: '#ffffff' }]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: { boxWidth: 12, font: { size: 11 } }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.label || '';
-                                let value = context.parsed;
-                                return label + ': ' + formatMoney(value);
-                            }
-                        }
-                    }
-                }
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } }
             }
         });
     }
 
     function renderMatrix(data) {
-        const tbody = document.getElementById('matrixBody');
-        tbody.innerHTML = '';
+    const tbody = document.getElementById('matrixBody');
+    tbody.innerHTML = '';
 
-        data.forEach((cat, index) => {
-            const parentRow = document.createElement('tr');
-            parentRow.className = 'category-row';
-            parentRow.innerHTML = `
-                <td><span class="toggle-icon">▶</span> ${cat.category}</td>
-                <td style="text-align: right;">${cat.quantity.toLocaleString()}</td>
-                <td style="text-align: right; font-weight:700;">${formatMoney(cat.total_sales)}</td>
-                <td style="text-align: right; color: #059669; font-weight:600;">${formatMoney(cat.total_profit)}</td>
-            `;
-            parentRow.onclick = function() {
-                this.classList.toggle('expanded');
-                document.querySelectorAll(`.child-${index}`).forEach(r => r.classList.toggle('visible'));
-            };
-            tbody.appendChild(parentRow);
+    data.forEach((cat, index) => {
+        // 1. Create Parent Row (Category)
+        const parentRow = document.createElement('tr');
+        parentRow.className = 'category-row';
+        parentRow.innerHTML = `
+            <td><span class="toggle-icon">▶</span> ${cat.category}</td>
+            <td style="text-align: right;">${cat.quantity.toLocaleString()}</td>
+            <td style="text-align: right; font-weight:700;">${formatMoney(cat.total_sales)}</td>
+            <td style="text-align: right; color: #059669; font-weight:600;">${formatMoney(cat.total_profit)}</td>
+        `;
 
-            cat.items.forEach(item => {
-                const childRow = document.createElement('tr');
-                childRow.className = `item-row child-${index}`;
-                childRow.innerHTML = `
-                    <td>${item.name}</td>
-                    <td style="text-align: right;">${item.qty.toLocaleString()}</td>
-                    <td style="text-align: right;">${formatMoney(item.sales)}</td>
-                    <td style="text-align: right;">${formatMoney(item.profit)}</td>
-                `;
-                tbody.appendChild(childRow);
-            });
+        // 2. Create Details Row (Hidden Container)
+        const detailsRow = document.createElement('tr');
+        detailsRow.className = 'details-row';
+        detailsRow.style.display = 'none'; // Hidden by default
+        
+        // 3. Build Nested Table HTML
+        let itemsHtml = '';
+        cat.items.forEach(item => {
+            // Note: We match the column widths of the parent table roughly
+            itemsHtml += `
+                <tr>
+                    <td width="40%">${item.name}</td>
+                    <td width="15%" style="text-align: right;">${item.qty.toLocaleString()}</td>
+                    <td width="20%" style="text-align: right;">${formatMoney(item.sales)}</td>
+                    <td width="20%" style="text-align: right;">${formatMoney(item.profit)}</td>
+                </tr>`;
         });
-    }
+
+        // 4. Create the scrollable container and search bar
+        const cell = document.createElement('td');
+        cell.colSpan = 4; // Span across all main columns
+        const tableId = `nested-table-${index}`;
+        
+        cell.innerHTML = `
+            <div class="nested-container">
+                <div class="nested-header">
+                    <input type="text" placeholder="🔍 Search inside ${cat.category}..." 
+                           class="nested-search" 
+                           onkeyup="filterNestedTable(this, '${tableId}')"
+                           onclick="event.stopPropagation()">
+                    <span style="font-size:12px; color:#64748b; font-weight:500;">
+                        ${cat.items.length} items found
+                    </span>
+                </div>
+                <table class="nested-table">
+                    <tbody id="${tableId}">
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        detailsRow.appendChild(cell);
+
+        // 5. Append to Main Table
+        tbody.appendChild(parentRow);
+        tbody.appendChild(detailsRow);
+
+        // 6. Click Event to Toggle
+        parentRow.onclick = function() {
+            const isExpanded = this.classList.contains('expanded');
+            
+            // Close all others first (Optional: keeps it clean)
+            document.querySelectorAll('.category-row').forEach(r => r.classList.remove('expanded'));
+            document.querySelectorAll('.details-row').forEach(r => r.style.display = 'none');
+
+            if (!isExpanded) {
+                this.classList.add('expanded');
+                detailsRow.style.display = 'table-row';
+            }
+        };
+    });
+}
+
+// Helper Function for the Mini-Search
+function filterNestedTable(input, tableId) {
+    const filter = input.value.toLowerCase();
+    const rows = document.querySelectorAll(`#${tableId} tr`);
+    
+    rows.forEach(row => {
+        const text = row.cells[0].textContent.toLowerCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+}
 
     function resetFilters() {
         document.getElementById('periodFilter').value = 'month';
@@ -735,8 +802,10 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        // Init with auto-refresh every 30s
         updateDashboard();
+        setInterval(updateDashboard, 30000); 
     });
-</script>
+    </script>
 </body>
 </html>
