@@ -1,67 +1,143 @@
 <?php
+// navbar.php - Responsive Bootstrap Version
 // Ensure this file is included AFTER config.php
+
 $current_page = basename($_SERVER['PHP_SELF']);
 $user_name = $_SESSION['full_name'] ?? 'User';
+$role_id = $_SESSION['role_id'] ?? 0;
+
+// Helper function to set active class
+function isActive($page) {
+    global $current_page;
+    return $current_page == $page ? 'active fw-bold text-primary' : 'text-secondary';
+}
 ?>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
 <style>
-    /* Navbar Styles */
-    .app-navbar {
-        background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 20px;
-        position: sticky; top: 0; z-index: 1000; display: flex; justify-content: space-between;
-        align-items: center; height: 64px; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); font-family: 'Inter', sans-serif;
+    /* Navbar Tweaks */
+    .navbar { 
+        font-family: 'Inter', sans-serif; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
     }
-    .nav-brand { font-size: 20px; font-weight: 700; color: #1e40af; text-decoration: none; }
-    .nav-links { display: flex; gap: 20px; height: 100%; align-items: center; }
-    .nav-item { 
-        text-decoration: none; color: #6b7280; font-weight: 500; font-size: 14px; 
-        transition: all 0.2s; display: flex; align-items: center; gap: 6px;
+    .nav-link { 
+        font-size: 0.9rem; 
+        font-weight: 500; 
+        transition: color 0.2s; 
     }
-    .nav-item:hover { color: #1f2937; }
-    .nav-item.active { color: #2563eb; font-weight: 600; }
-    .user-menu { display: flex; align-items: center; gap: 15px; font-size: 14px; color: #374151; border-left: 1px solid #e5e7eb; padding-left: 15px; }
-    .logout-btn { color: #dc2626; text-decoration: none; font-weight: 600; font-size: 13px; }
+    .nav-link:hover { color: #2563eb !important; }
+    
+    /* User Avatar */
+    .avatar-circle {
+        width: 32px; height: 32px; background-color: #f1f5f9; color: #475569;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: 14px; margin-right: 8px; border: 1px solid #e2e8f0;
+    }
+    
+    /* Mobile Fixes */
+    @media (max-width: 991px) {
+        .navbar-collapse {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-top: 10px;
+        }
+    }
 </style>
 
-<nav class="app-navbar">
-    <a href="index.php" class="nav-brand">🚀 NAM Supply</a>
+<nav class="navbar navbar-expand-lg navbar-light sticky-top py-2">
+    <div class="container-fluid px-lg-4">
+        
+        <a class="navbar-brand fw-bold text-primary" href="index.php" style="font-size: 1.25rem;">
+            <i class="fas fa-rocket me-2"></i>NAM Supply
+        </a>
 
-    <div class="nav-links">
-        <?php if (hasPermission('view_dashboard')): ?>
-            <a href="index.php" class="nav-item <?php echo $current_page == 'index.php' ? 'active' : ''; ?>">
-                📊 Dashboard
-            </a>
-        <?php endif; ?>
+        <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
 
-        <?php if (hasPermission('manage_products')): ?>
-            <a href="products.php" class="nav-item <?php echo $current_page == 'products.php' ? 'active' : ''; ?>">
-                📦 Inventory
-            </a>
-        <?php endif; ?>
+        <div class="collapse navbar-collapse" id="mainNav">
+            
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-lg-2">
+                
+                <?php if (function_exists('hasPermission') && hasPermission('view_dashboard')): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('index.php'); ?>" href="index.php">
+                            <i class="fas fa-chart-pie me-1 d-lg-none"></i> Dashboard
+                        </a>
+                    </li>
+                <?php endif; ?>
 
-        <?php if (hasPermission('manage_sales')): ?>
-            <a href="records.php" class="nav-item <?php echo $current_page == 'records.php' ? 'active' : ''; ?>">
-                📋 Records
-            </a>
-            <a href="form.php" class="nav-item <?php echo $current_page == 'form.php' ? 'active' : ''; ?>">
-                ➕ New Sale
-            </a>
-        <?php endif; ?>
+                <?php if (function_exists('hasPermission') && hasPermission('manage_sales')): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('records.php'); ?>" href="records.php">
+                            <i class="fas fa-clipboard-list me-1 d-lg-none"></i> Records
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('form.php'); ?>" href="form.php">
+                            <i class="fas fa-plus-circle me-1 d-lg-none"></i> New Sale
+                        </a>
+                    </li>
+                <?php endif; ?>
 
-        <?php if (hasPermission('view_logistics')): ?>
-            <a href="delivery_view.php" class="nav-item <?php echo $current_page == 'delivery_view.php' ? 'active' : ''; ?>">
-                🚚 Logistics
-            </a>
-        <?php endif; ?>
+                <?php if (function_exists('hasPermission') && hasPermission('manage_products')): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('products.php'); ?>" href="products.php">
+                            <i class="fas fa-boxes me-1 d-lg-none"></i> Inventory
+                        </a>
+                    </li>
+                <?php endif; ?>
 
-        <?php if (hasPermission('manage_users')): ?>
-            <a href="users.php" class="nav-item <?php echo $current_page == 'users.php' ? 'active' : ''; ?>">
-                👥 Users
-            </a>
-        <?php endif; ?>
+                <?php if (function_exists('hasPermission') && hasPermission('view_logistics')): ?>
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('delivery_view.php'); ?>" href="delivery_view.php">
+                            <i class="fas fa-truck me-1 d-lg-none"></i> Logistics
+                        </a>
+                    </li>
+                <?php endif; ?>
 
-        <div class="user-menu">
-            <span>👤 <?php echo htmlspecialchars($user_name); ?></span>
-            <a href="logout.php" class="logout-btn">Logout</a>
+                <?php if ($role_id == 1): ?>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle <?php echo (isActive('users.php') || isActive('import.php')) ? 'text-primary fw-bold' : ''; ?>" 
+                           href="#" role="button" data-bs-toggle="dropdown">
+                           <i class="fas fa-user-shield me-1 d-lg-none"></i> Admin
+                        </a>
+                        <ul class="dropdown-menu border-0 shadow-sm">
+                            <li><a class="dropdown-item" href="users.php"><i class="fas fa-users me-2 text-muted"></i>Manage Users</a></li>
+                            <li><a class="dropdown-item" href="import.php"><i class="fas fa-file-import me-2 text-muted"></i>Import Data</a></li>
+                        </ul>
+                    </li>
+                <?php endif; ?>
+            </ul>
+
+            <ul class="navbar-nav ms-auto align-items-center">
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-flex align-items-center text-dark" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <div class="avatar-circle">
+                            <?php echo strtoupper(substr($user_name, 0, 1)); ?>
+                        </div>
+                        <span class="d-none d-sm-inline small fw-bold"><?php echo htmlspecialchars($user_name); ?></span>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end border-0 shadow mt-2">
+                        <li><span class="dropdown-header">Signed in as <br><strong><?php echo htmlspecialchars($user_name); ?></strong></span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item text-danger fw-semibold" href="logout.php">
+                                <i class="fas fa-sign-out-alt me-2"></i>Logout
+                            </a>
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+
         </div>
     </div>
 </nav>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

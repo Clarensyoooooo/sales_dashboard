@@ -4,293 +4,236 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Product Price List - NAM Supply</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>Inventory Management - NAM Supply</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        :root {
-            --primary: #2563eb;       
-            --primary-dark: #1e40af;  
-            --secondary: #f97316;     
-            --bg: #f3f4f6;            
-            --surface: #ffffff;       
-            --text-main: #1f2937;     
-            --text-light: #6b7280;    
-            --border: #e5e7eb;        
-            --success: #10b981;       
-            --danger: #ef4444;        
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --radius: 12px;
-        }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--bg);
-            color: var(--text-main);
-            padding: 0; /* Padding handled by container margin */
-            min-height: 100vh;
-        }
-
-        .dashboard-container {
-            max-width: 100%;
-            margin: 20px auto;
-            padding: 0 20px;
-        }
-
-        /* Buttons */
-        .btn {
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            cursor: pointer;
-            border: 1px solid transparent;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-        }
-
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
-        .btn-secondary { background: white; color: var(--text-main); border-color: var(--border); }
-        
-        .btn-icon { padding: 6px 10px; font-size: 14px; }
-        .btn-edit { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
-        .btn-delete { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-
-        /* KPI Cards */
-        .kpi-container {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 20px;
-            margin-bottom: 25px;
-        }
-
-        .kpi-card {
-            background: var(--surface);
-            padding: 24px;
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            border-left: 5px solid var(--primary);
-        }
-        .kpi-card.warning { border-left-color: var(--secondary); }
-        .kpi-card.success { border-left-color: var(--success); }
-
-        .kpi-value { font-size: 32px; font-weight: 700; color: var(--text-main); margin-top: 5px; }
-        .kpi-label { font-size: 13px; color: var(--text-light); text-transform: uppercase; font-weight: 600; }
-
-        /* Filter Bar - UPDATED to hold the button */
-        .filter-bar {
-            background: var(--surface);
-            padding: 20px;
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            margin-bottom: 20px;
-            display: flex;
-            gap: 15px;
-            align-items: center;
-            justify-content: space-between; /* Pushes button to right */
-        }
-
-        .search-container {
-            flex: 1;
-            max-width: 600px;
-            position: relative;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 12px 16px;
-            padding-left: 40px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 14px;
-            background-color: #f9fafb;
-        }
-
-        .search-icon {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-light);
-            pointer-events: none;
-        }
-
-        /* Table */
-        .table-card {
-            background: var(--surface);
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            overflow: hidden;
-        }
-        .table-container { overflow-x: auto; }
-
-        table { width: 100%; border-collapse: collapse; font-size: 14px; white-space: nowrap; }
-        thead { background: #f8fafc; border-bottom: 2px solid var(--border); }
-        th { padding: 16px; text-align: left; font-weight: 600; color: var(--text-light); font-size: 12px; text-transform: uppercase; }
-        td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; color: var(--text-main); vertical-align: middle; }
-        tbody tr:hover { background-color: #f8fafc; }
-
-        .category-badge { padding: 4px 8px; border-radius: 4px; background: #e0f2fe; color: #0369a1; font-size: 11px; font-weight: 600; }
-        .price-nam { font-weight: 700; color: var(--primary); }
-
-        /* Pagination */
-        .pagination { display: flex; justify-content: center; gap: 10px; padding: 20px; background: var(--surface); border-top: 1px solid var(--border); }
-        .pagination button { padding: 8px 14px; border: 1px solid var(--border); background: white; border-radius: 6px; cursor: pointer; }
-
-        /* Modal */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
-        .modal.active { display: flex; }
-        .modal-content { background: var(--surface); padding: 30px; width: 100%; max-width: 600px; border-radius: 16px; max-height: 90vh; overflow-y: auto; }
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--text-light); text-transform: uppercase; }
-        .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; }
-        .modal-actions { margin-top: 25px; display: flex; justify-content: flex-end; gap: 10px; padding-top: 20px; border-top: 1px solid var(--border); }
+        .table-responsive { max-height: 70vh; overflow-y: auto; }
+        thead th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; }
+        .kpi-card { border-left: 4px solid; transition: transform 0.2s; }
+        .kpi-card:hover { transform: translateY(-3px); }
+        .kpi-card.blue { border-color: #0d6efd; }
+        .kpi-card.red { border-color: #dc3545; }
+        .kpi-card.green { border-color: #198754; }
+        .col-truncate { max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>
 </head>
-<body>
-    
+<body class="bg-light">
+
     <?php include 'navbar.php'; ?>
 
-    <div class="dashboard-container">
+    <div class="container-fluid mt-4 px-4">
         
-        <div class="kpi-container">
-            <div class="kpi-card">
-                <div class="kpi-label">Total Products</div>
-                <div class="kpi-value" id="totalItems">0</div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card blue h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted text-uppercase fw-bold small mb-1">Total Products</h6>
+                                <h2 class="mb-0 fw-bold text-dark" id="totalItems">0</h2>
+                            </div>
+                            <div class="text-primary opacity-50"><i class="fas fa-boxes fa-2x"></i></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="kpi-card warning">
-                <div class="kpi-label">Low Stock Items</div>
-                <div class="kpi-value" id="lowStockCount" style="color: var(--danger);">0</div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card red h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted text-uppercase fw-bold small mb-1">Low Stock Items</h6>
+                                <h2 class="mb-0 fw-bold text-danger" id="lowStockCount">0</h2>
+                            </div>
+                            <div class="text-danger opacity-50"><i class="fas fa-exclamation-triangle fa-2x"></i></div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="kpi-card success">
-                <div class="kpi-label">Average Margin</div>
-                <div class="kpi-value" id="avgMargin">0%</div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card green h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-muted text-uppercase fw-bold small mb-1">Avg. Margin</h6>
+                                <h2 class="mb-0 fw-bold text-success" id="avgMargin">0%</h2>
+                            </div>
+                            <div class="text-success opacity-50"><i class="fas fa-chart-line fa-2x"></i></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="filter-bar">
-            <div class="search-container">
-                <span class="search-icon">🔍</span>
-                <input type="text" id="searchInput" class="search-input" placeholder="Search by Product Name, Category, or Supplier..." onkeyup="handleSearch()">
+        <div id="alertContainer"></div>
+
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-body bg-white py-3">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                            <input type="text" id="searchInput" class="form-control border-start-0" placeholder="Search by Product Name, Category, or Supplier..." onkeyup="handleSearch()">
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <button onclick="openModal()" class="btn btn-primary fw-bold">
+                            <i class="fas fa-plus-circle me-2"></i>Add New Product
+                        </button>
+                    </div>
+                </div>
             </div>
-            <button onclick="openModal()" class="btn btn-primary">➕ Add New Product</button>
         </div>
 
-        <div class="table-card">
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th width="30%">Product Name</th>
-                            <th>Category</th>
-                            <th>Unit</th>
-                            <th>Supplier</th>
-                            <th>Supp. Price</th>
-                            <th>NAM Price</th>
-                            <th>Stock</th> <th>Margin</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="productTable">
-                        <tr><td colspan="9" style="text-align:center; padding:40px;">Loading products...</td></tr>
-                    </tbody>
-                </table>
-            </div>
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped table-sm mb-0 align-middle">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-3 py-3">Product Name</th>
+                                <th>Category</th>
+                                <th>Unit</th>
+                                <th>Supplier</th>
+                                <th class="text-end">Supp. Price</th>
+                                <th class="text-end">NAM Price</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-center">Margin</th>
+                                <th class="text-end pe-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productTable">
+                            <tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading products...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
 
-            <div class="pagination" id="pagination" style="display: none;">
-                <button onclick="changePage('first')">⏮️ First</button>
-                <button onclick="changePage('prev')">◀️ Prev</button>
-                <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
-                <button onclick="changePage('next')">Next ▶️</button>
-                <button onclick="changePage('last')">Last ⏭️</button>
+                <div class="d-flex justify-content-between align-items-center p-3 border-top" id="paginationBar">
+                    <span class="small text-muted">Showing page <span id="currentPage" class="fw-bold">1</span> of <span id="totalPages">1</span></span>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="changePage('first')"><i class="fas fa-angle-double-left"></i></button>
+                        <button class="btn btn-outline-secondary" onclick="changePage('prev')"><i class="fas fa-angle-left"></i></button>
+                        <button class="btn btn-outline-secondary" onclick="changePage('next')"><i class="fas fa-angle-right"></i></button>
+                        <button class="btn btn-outline-secondary" onclick="changePage('last')"><i class="fas fa-angle-double-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="productModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-primary" id="modalTitle"><i class="fas fa-box me-2"></i>Add Product</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="productForm" onsubmit="saveProduct(event)">
+                    <div class="modal-body">
+                        <input type="hidden" name="id" id="prodId">
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Product Name <span class="text-danger">*</span></label>
+                            <input type="text" name="name" id="prodName" class="form-control" required placeholder="Enter product name">
+                        </div>
+                        
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold small text-muted text-uppercase">Category <span class="text-danger">*</span></label>
+                                <select name="category" id="prodCat" class="form-select" required>
+                                    <option value="">Select Category...</option>
+                                    <option value="OFFICE SUPPLIES">OFFICE SUPPLIES</option>
+                                    <option value="CLEANING MATERIALS">CLEANING MATERIALS</option>
+                                    <option value="CONSUMABLES">CONSUMABLES</option>
+                                    <option value="OFFICE TOOLS AND EQUIPMENT">OFFICE TOOLS</option>
+                                    <option value="PPE">PPE</option>
+                                    <option value="MATERIALS">MATERIALS</option>
+                                    <option value="COMPANY UNIFORM">UNIFORMS</option>
+                                    <option value="OFFICE FURNITURE & FIXTURES">FURNITURE</option>
+                                    <option value="MEDICINE">MEDICINE</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold small text-muted text-uppercase">Unit</label>
+                                <input type="text" name="unit" id="prodUnit" class="form-control" placeholder="e.g. PC, BOX">
+                            </div>
+                        </div>
+
+                        <div class="card bg-light border-0 mb-3">
+                            <div class="card-body py-2">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-success text-uppercase">Current Stock</label>
+                                        <input type="number" name="current_stock" id="prodStock" class="form-control" required value="0">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-danger text-uppercase">Low Stock Alert Level</label>
+                                        <input type="number" name="reorder_level" id="prodReorder" class="form-control" required value="10">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted text-uppercase">Supplier Name</label>
+                            <input type="text" name="supplier" id="prodSupplier" class="form-control" placeholder="Enter supplier name">
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-muted text-uppercase">Supplier Price (₱)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">₱</span>
+                                    <input type="number" step="0.01" name="supplier_price" id="prodSPrice" class="form-control" required placeholder="0.00">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold small text-primary text-uppercase">NAM Price (₱)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                    <input type="number" step="0.01" name="nam_price" id="prodNPrice" class="form-control border-primary" required placeholder="0.00">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-bold"><i class="fas fa-save me-2"></i>Save Product</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
-    <div class="modal" id="productModal">
-        <div class="modal-content">
-            <div style="display:flex; justify-content:space-between; margin-bottom:20px; border-bottom:1px solid #eee; padding-bottom:15px;">
-                <h2 id="modalTitle" style="margin:0;">Add Product</h2>
-                <button onclick="closeModal()" style="border:none; background:none; font-size:24px; cursor:pointer;">&times;</button>
-            </div>
-            
-            <form id="productForm" onsubmit="saveProduct(event)">
-                <input type="hidden" name="id" id="prodId">
-                
-                <div class="form-group">
-                    <label>Product Name</label>
-                    <input type="text" name="name" id="prodName" required placeholder="Enter product name">
-                </div>
-                
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>Category</label>
-                        <select name="category" id="prodCat" required>
-                            <option value="">Select Category...</option>
-                            <option value="OFFICE SUPPLIES">OFFICE SUPPLIES</option>
-                            <option value="CLEANING MATERIALS">CLEANING MATERIALS</option>
-                            <option value="CONSUMABLES">CONSUMABLES</option>
-                            <option value="OFFICE TOOLS AND EQUIPMENT">OFFICE TOOLS</option>
-                            <option value="PPE">PPE</option>
-                            <option value="MATERIALS">MATERIALS</option>
-                            <option value="COMPANY UNIFORM">UNIFORMS</option>
-                            <option value="OFFICE FURNITURE & FIXTURES">FURNITURE</option>
-                            <option value="MEDICINE">MEDICINE</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Unit</label>
-                        <input type="text" name="unit" id="prodUnit" placeholder="e.g. PC, BOX">
-                    </div>
-                </div>
-
-                <div class="form-grid" style="background:#f0fdf4; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #bbf7d0;">
-                    <div class="form-group">
-                        <label style="color:#166534;">Current Stock</label>
-                        <input type="number" name="current_stock" id="prodStock" required placeholder="0" style="background:white;">
-                    </div>
-                    <div class="form-group">
-                        <label style="color:#166534;">Low Stock Alert Level</label>
-                        <input type="number" name="reorder_level" id="prodReorder" required value="10" style="background:white;">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Supplier Name</label>
-                    <input type="text" name="supplier" id="prodSupplier" placeholder="Enter supplier name">
-                </div>
-
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label>Supplier Price (₱)</label>
-                        <input type="number" step="0.01" name="supplier_price" id="prodSPrice" required placeholder="0.00">
-                    </div>
-                    <div class="form-group">
-                        <label>NAM Price (₱)</label>
-                        <input type="number" step="0.01" name="nam_price" id="prodNPrice" required placeholder="0.00">
-                    </div>
-                </div>
-
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">💾 Save Product</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         let allProducts = [];
         let filteredProducts = [];
         let currentPage = 1;
         const itemsPerPage = 50;
+        let productModal;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            productModal = new bootstrap.Modal(document.getElementById('productModal'));
+            loadProducts();
+        });
+
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alertContainer');
+            container.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show shadow-sm" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+            setTimeout(() => {
+                const alert = bootstrap.Alert.getOrCreateInstance(container.querySelector('.alert'));
+                if(alert) alert.close();
+            }, 3000);
+        }
 
         async function loadProducts() {
             try {
@@ -302,6 +245,7 @@
                 renderTable();
             } catch (err) {
                 console.error("Error loading products:", err);
+                showAlert("Failed to load products.", "danger");
             }
         }
 
@@ -321,10 +265,11 @@
             tbody.innerHTML = '';
             
             if (filteredProducts.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:30px;">No products found.</td></tr>`;
-                document.getElementById('pagination').style.display = 'none';
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>No products found.</td></tr>`;
+                document.getElementById('paginationBar').classList.add('d-none');
                 return;
             }
+            document.getElementById('paginationBar').classList.remove('d-none');
 
             const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
             const start = (currentPage - 1) * itemsPerPage;
@@ -337,28 +282,36 @@
                 const reorder = parseInt(p.reorder_level || 10);
                 const isLow = stock <= reorder;
 
-                tr.innerHTML = `
-                    <td style="font-weight: 600; white-space: normal;">${p.name}</td>
-                    <td><span class="category-badge">${p.category_code}</span></td>
-                    <td style="color: #666;">${p.unit || '-'}</td>
-                    <td>${p.supplier || '-'}</td>
-                    <td class="price-value">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="price-nam">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    
-                    <td style="font-weight: 700; color: ${isLow ? 'var(--danger)' : 'var(--success)'};">
-                        ${stock} ${isLow ? '⚠️' : ''}
-                    </td>
+                // Status Badge Logic
+                let stockBadge = isLow 
+                    ? `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>${stock}</span>` 
+                    : `<span class="badge bg-success">${stock}</span>`;
 
-                    <td><span style="font-weight:500; color:${parseFloat(p.margin) > 0 ? 'var(--success)' : 'var(--danger)'}">${p.margin || '0%'}</span></td>
-                    <td>
-                        <button class="btn btn-icon btn-edit" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})'>✏️</button>
-                        <button class="btn btn-icon btn-delete" onclick="deleteProduct(${p.id})">🗑️</button>
+                tr.innerHTML = `
+                    <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name}">${p.name}</td>
+                    <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
+                    <td class="text-muted small">${p.unit || '-'}</td>
+                    <td class="small">${p.supplier || '-'}</td>
+                    <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+                    
+                    <td class="text-center">${stockBadge}</td>
+
+                    <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
+                    <td class="text-end pe-3">
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
 
-            document.getElementById('pagination').style.display = 'flex';
             document.getElementById('currentPage').textContent = currentPage;
             document.getElementById('totalPages').textContent = totalPages;
         }
@@ -370,7 +323,6 @@
             else if (action === 'next' && currentPage < totalPages) currentPage++;
             else if (action === 'last') currentPage = totalPages;
             renderTable();
-            document.querySelector('.table-card').scrollIntoView({ behavior: 'smooth' });
         }
 
         function updateStats(data) {
@@ -390,7 +342,7 @@
         }
 
         function editProduct(p) {
-            document.getElementById('modalTitle').textContent = "Edit Product";
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-edit me-2"></i>Edit Product';
             document.getElementById('prodId').value = p.id;
             document.getElementById('prodName').value = p.name;
             document.getElementById('prodCat').value = p.category_code;
@@ -400,20 +352,16 @@
             document.getElementById('prodNPrice').value = p.nam_price;
             document.getElementById('prodStock').value = p.current_stock || 0;
             document.getElementById('prodReorder').value = p.reorder_level || 10;
-            document.getElementById('productModal').classList.add('active');
+            productModal.show();
         }
 
         function openModal() {
-            document.getElementById('modalTitle').textContent = "Add Product";
+            document.getElementById('modalTitle').innerHTML = '<i class="fas fa-box me-2"></i>Add Product';
             document.getElementById('productForm').reset();
             document.getElementById('prodId').value = '';
             document.getElementById('prodStock').value = 0;
             document.getElementById('prodReorder').value = 10;
-            document.getElementById('productModal').classList.add('active');
-        }
-
-        function closeModal() {
-            document.getElementById('productModal').classList.remove('active');
+            productModal.show();
         }
 
         async function saveProduct(e) {
@@ -422,28 +370,30 @@
             try {
                 const res = await fetch('save_product.php', { method: 'POST', body: formData });
                 const result = await res.json();
-                if(result.success) { closeModal(); loadProducts(); }
-                else { alert("Error: " + result.message); }
-            } catch (err) { alert("Error saving product"); }
+                if(result.success) { 
+                    productModal.hide(); 
+                    loadProducts(); 
+                    showAlert("Product saved successfully!", "success");
+                } else { 
+                    showAlert("Error: " + result.message, "danger"); 
+                }
+            } catch (err) { showAlert("Error saving product", "danger"); }
         }
 
         async function deleteProduct(id) {
-            if(!confirm("Delete this product?")) return;
+            if(!confirm("Are you sure you want to delete this product? This cannot be undone.")) return;
             try {
                 const formData = new FormData();
                 formData.append('id', id);
                 const res = await fetch('delete_product.php', { method: 'POST', body: formData });
                 const result = await res.json();
-                if(result.success) loadProducts();
-                else alert("Error deleting");
-            } catch (err) { alert("Error deleting"); }
+                if(result.success) {
+                    loadProducts();
+                    showAlert("Product deleted.", "success");
+                }
+                else showAlert("Error deleting product.", "danger");
+            } catch (err) { showAlert("Error deleting product.", "danger"); }
         }
-
-        document.getElementById('productModal').addEventListener('click', (e) => {
-            if (e.target.id === 'productModal') closeModal();
-        });
-
-        loadProducts();
     </script>
 </body>
 </html>
