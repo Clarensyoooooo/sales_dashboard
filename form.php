@@ -1,4 +1,17 @@
-<?php require_once 'config.php'; requireLogin(); requirePermission('manage_sales'); ?>
+<?php 
+require_once 'config.php'; 
+requireLogin(); 
+requirePermission('manage_sales'); 
+
+// FETCH COMPANIES FOR AUTOCOMPLETE
+$conn = getDBConnection();
+$companies = [];
+$res = $conn->query("SELECT DISTINCT company FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY company ASC");
+while($row = $res->fetch_assoc()) {
+    $companies[] = $row['company'];
+}
+$conn->close();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -57,7 +70,12 @@
                                     </div>
                                     <div class="col-12">
                                         <label class="form-label small fw-bold">Company Name <span class="required-star">*</span></label>
-                                        <input type="text" name="company" class="form-control form-control-sm" required placeholder="e.g. SUMOPAK">
+                                        <input type="text" name="company" class="form-control form-control-sm" list="companyList" required placeholder="Type to search or enter new..." autocomplete="off">
+                                        <datalist id="companyList">
+                                            <?php foreach($companies as $comp): ?>
+                                                <option value="<?php echo htmlspecialchars($comp); ?>">
+                                            <?php endforeach; ?>
+                                        </datalist>
                                     </div>
                                     <div class="col-12">
                                         <input type="text" name="address" class="form-control form-control-sm mt-1" placeholder="Address (Optional)">
@@ -96,6 +114,7 @@
                                             <option value="MATERIALS">MATERIALS</option>
                                             <option value="COMPANY UNIFORM">UNIFORMS</option>
                                             <option value="OFFICE FURNITURE & FIXTURES">FURNITURE</option>
+                                            <option value="MEDICINE">MEDICINE</option>
                                         </select>
                                     </div>
                                     <div class="col-12">
@@ -294,6 +313,7 @@
             const locked = document.getElementById('lockHeader').checked;
             if(locked) {
                 // Keep Client details, clear Item details
+                // NOTE: We do NOT clear 'company' here because it's part of the header
                 ['itemInput', 'quantity', 'sn', 'sPrice', 'nPrice', 'tActual', 'tSales', 'supplierName', 'sales_invoice_no', 'date_delivered'].forEach(id => {
                     const el = document.getElementById(id);
                     if(el) el.value = (id === 'quantity') ? '1' : '';
@@ -378,8 +398,14 @@
         
         // Reset form to default state (respecting current date)
         const dateVal = document.getElementById('entryForm').querySelector('[name="date"]').value;
+        const companyVal = document.getElementById('entryForm').querySelector('[name="company"]').value;
+        const lock = document.getElementById('lockHeader').checked;
+
         document.getElementById('entryForm').reset();
         document.getElementById('entryForm').querySelector('[name="date"]').value = dateVal;
+        
+        // If locked, restore company
+        if(lock) document.getElementById('entryForm').querySelector('[name="company"]').value = companyVal;
         
         renderQueue();
     }
@@ -413,6 +439,8 @@
                 batchQueue = [];
                 cancelEdit();
                 renderQueue();
+                // Optionally reload page to refresh company list
+                // location.reload(); 
             } else {
                 alert('❌ Error: ' + data.message);
             }

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAM Builders & Supply Corp.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;600;800&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- CSS VARIABLES & RESET --- */
+        :root {
+            --nam-blue: #0e5aa3; /* Extracted from Logo */
+            --nam-dark: #072c52;
+            --nam-light: #e6f0fa;
+            --white: #ffffff;
+            --concrete: #f4f6f8;
+            --text-main: #334155;
+            --text-light: #64748b;
+            --transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Manrope', sans-serif;
+            background-color: var(--concrete);
+            color: var(--text-main);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: 'Oswald', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--nam-dark);
+        }
+
+        a { text-decoration: none; color: inherit; }
+        ul { list-style: none; }
+
+        /* --- UTILITIES --- */
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 1rem 2.5rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 4px;
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        .btn-primary {
+            background-color: var(--nam-blue);
+            color: var(--white);
+            border: 1px solid var(--nam-blue);
+        }
+
+        .btn-primary::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 0%;
+            background-color: var(--nam-dark);
+            z-index: -1;
+            transition: var(--transition);
+        }
+
+        .btn-primary:hover::after {
+            height: 100%;
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--nam-blue);
+            border: 1px solid var(--nam-blue);
+        }
+
+        .btn-outline:hover {
+            background: var(--nam-blue);
+            color: var(--white);
+        }
+
+        /* --- NAVIGATION (GLASSMORPHISM) --- */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 1.2rem 0;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            transition: padding 0.3s ease;
+        }
+
+        nav.scrolled {
+            padding: 0.8rem 0;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+        }
+
+        .nav-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--nam-blue);
+            letter-spacing: -1px;
+        }
+
+        /* CSS Recreation of the Logo Circle */
+        .logo-symbol {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--nam-blue);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            font-family: 'Oswald', sans-serif;
+            font-weight: 700;
+            color: var(--nam-blue);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .nav-links a:hover {
+            color: var(--nam-blue);
+        }
+
+        /* --- HERO SECTION --- */
+        .hero {
+            position: relative;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            background-color: var(--white);
+        }
+
+        /* Abstract construction background shapes */
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -20%;
+            right: -10%;
+            width: 60%;
+            height: 120%;
+            background: var(--nam-light);
+            transform: skewX(-15deg);
+            z-index: 0;
+        }
+
+        .hero::after {
+            content: '';
+            position: absolute;
+            bottom: -10%;
+            left: 20%;
+            width: 2px;
+            height: 40%;
+            background: var(--nam-blue);
+            z-index: 0;
+            opacity: 0.3;
+        }
+
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            align-items: center;
+            gap: 4rem;
+        }
+
+        .hero-text h1 {
+            font-size: clamp(3.5rem, 6vw, 5.5rem);
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-text .highlight {
+            color: var(--nam-blue);
+            display: block;
+        }
+
+        .hero-text p {
+            font-size: 1.25rem;
+            color: var(--text-light);
+            margin-bottom: 2.5rem;
+            max-width: 500px;
+        }
+
+        /* Decorative Image Frame */
+        .hero-image {
+            position: relative;
+            height: 600px;
+            width: 100%;
+        }
+
+        .img-block {
+            position: absolute;
+            background-size: cover;
+            background-position: center;
+            border-radius: 8px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .img-main {
+            top: 50px;
+            left: 0;
+            width: 90%;
+            height: 80%;
+            background-image: url('https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=1000&auto=format&fit=crop'); /* Construction Placeholder */
+            z-index: 2;
+        }
+
+        .img-accent {
+            bottom: 0;
+            right: 0;
+            width: 50%;
+            height: 40%;
+            background-color: var(--nam-blue);
+            z-index: 1;
+        }
+        
+        .img-accent-2 {
+            top: 0;
+            right: 10%;
+            width: 40%;
+            height: 30%;
+            border: 2px solid var(--nam-blue);
+            z-index: 3;
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: var(--nam-dark);
+            line-height: 1;
+        }
+        .stat-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            color: var(--text-light);
+            font-weight: 600;
+        }
+
+        /* --- SCROLL ANIMATION CLASSES --- */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s ease-out;
+        }
+        .reveal.active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* --- SERVICES (BENTO GRID) --- */
+        .services {
+            padding: 8rem 0;
+            background: var(--white);
+        }
+
+        .section-header {
+            margin-bottom: 4rem;
+            text-align: left;
+        }
+
+        .section-tag {
+            color: var(--nam-blue);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+
+        .section-title {
+            font-size: 3rem;
+            color: var(--nam-dark);
+        }
+
+        .bento-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(2, 350px);
+            gap: 1.5rem;
+        }
+
+        .bento-card {
+            background: var(--concrete);
+            border-radius: 12px;
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            border: 1px solid transparent;
+        }
+
+        .bento-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(14, 90, 163, 0.15);
+            border-color: rgba(14, 90, 163, 0.2);
+        }
+
+        /* Grid Spans */
+        .span-2 { grid-column: span 2; }
+        .span-row-2 { grid-row: span 2; }
+
+        .bento-icon {
+            font-size: 2rem;
+            margin-bottom: auto;
+            color: var(--nam-blue);
+        }
+
+        .bento-title {
+            font-size: 1.75rem;
+            margin-bottom: 0.5rem;
+            position: relative;
+            z-index: 2;
+        }
+
+        .bento-desc {
+            color: var(--text-light);
+            font-size: 1rem;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Specific card styles */
+        .card-supply {
+            background-color: var(--nam-dark);
+            color: var(--white);
+        }
+        .card-supply .bento-desc { color: rgba(255,255,255,0.7); }
+        .card-supply .bento-icon { color: var(--white); }
+
+        .card-img {
+            background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.8) 100%), url('https://images.unsplash.com/photo-1581094794329-c8112a89af12?q=80&w=1000');
+            background-size: cover;
+            color: var(--white);
+        }
+        .card-img .bento-desc { color: rgba(255,255,255,0.8); }
+
+        /* --- ABOUT/STATS STRIP --- */
+        .stats-strip {
+            background: var(--nam-blue);
+            color: var(--white);
+            padding: 4rem 0;
+        }
+        
+        .stats-grid {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+        }
+
+        .stat-item h3 {
+            color: var(--white);
+            font-size: 3.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-item p {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            font-weight: 300;
+        }
+
+        /* --- FOOTER --- */
+        footer {
+            background-color: var(--nam-dark);
+            color: var(--white);
+            padding: 6rem 0 2rem;
+            position: relative;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1.5fr;
+            gap: 4rem;
+            margin-bottom: 4rem;
+        }
+
+        .footer-brand p {
+            color: rgba(255,255,255,0.6);
+            margin-top: 1.5rem;
+            max-width: 300px;
+        }
+
+        .footer-col h4 {
+            color: var(--white);
+            margin-bottom: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        .footer-col ul li {
+            margin-bottom: 0.8rem;
+        }
+        .footer-col ul li a {
+            color: rgba(255,255,255,0.6);
+            transition: 0.3s;
+        }
+        .footer-col ul li a:hover { color: var(--white); }
+
+        .footer-bottom {
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 2rem;
+            text-align: center;
+            color: rgba(255,255,255,0.4);
+            font-size: 0.9rem;
+        }
+
+        /* --- MOBILE RESPONSIVE --- */
+        @media (max-width: 968px) {
+            .hero-grid { grid-template-columns: 1fr; text-align: center; }
+            .hero-text p { margin: 0 auto 2.5rem; }
+            .hero-image { display: none; }
+            .bento-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
+            .span-2, .span-row-2 { grid-column: auto; grid-row: auto; min-height: 300px; }
+            .stats-grid { flex-direction: column; gap: 3rem; }
+            .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
+            .nav-links { display: none; } /* Simplified for demo */
+        }
+    </style>
+</head>
+<body>
+
+    <nav id="navbar">
+        <div class="container nav-content">
+            <a href="#" class="logo">
+                <div class="logo-symbol">NAM</div>
+                NAM Builders
+            </a>
+            <ul class="nav-links">
+                <li><a href="#services">Services</a></li>
+                <li><a href="#projects">Projects</a></li>
+                <li><a href="#supply">Supply Chain</a></li>
+                <li><a href="#about">About</a></li>
+            </ul>
+            <a href="#contact" class="btn btn-primary" style="padding: 0.8rem 1.5rem; font-size: 0.8rem;">Get Quote</a>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <div class="hero-grid">
+                <div class="hero-text">
+                    <span class="section-tag reveal">Premier Construction Partner</span>
+                    <h1 class="reveal">
+                        Built for Business.<br>
+                        <span class="highlight">Powered by Supply.</span>
+                    </h1>
+                    <p class="reveal">
+                        NAM Builders & Supply Corp combines heavy-duty construction expertise with a reliable material supply chain. We build the structures that drive industry forward.
+                    </p>
+                    <div class="reveal">
+                        <a href="#contact" class="btn btn-primary">Start Your Project</a>
+                        <a href="#portfolio" class="btn btn-outline" style="margin-left: 1rem;">View Portfolio</a>
+                    </div>
+                </div>
+
+                <div class="hero-image reveal">
+                    <div class="img-block img-main"></div>
+                    <div class="img-block img-accent"></div>
+                    <div class="img-block img-accent-2">
+                        <div class="stat-number">10+</div>
+                        <div class="stat-label">Years of Excellence</div>
+                        <div style="margin-top: 1rem; border-top: 1px solid #ddd; padding-top: 1rem;">
+                            <span style="font-size:0.9rem; font-weight:700; display:block;">Certified Quality</span>
+                            <span style="font-size:0.8rem; color:#666;">ISO 9001 Compliant</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="services" class="services">
+        <div class="container">
+            <div class="section-header reveal">
+                <span class="section-tag">Our Expertise</span>
+                <h2 class="section-title">Integrated Solutions</h2>
+            </div>
+
+            <div class="bento-grid">
+                <div class="bento-card span-2 reveal">
+                    <div class="bento-icon">🏗️</div>
+                    <h3 class="bento-title">General Construction</h3>
+                    <p class="bento-desc">Commercial buildings, industrial warehouses, and infrastructure development delivered with precision engineering.</p>
+                </div>
+
+                <div class="bento-card card-supply reveal">
+                    <div class="bento-icon">📦</div>
+                    <h3 class="bento-title">Material Supply</h3>
+                    <p class="bento-desc">Direct sourcing of high-grade construction materials. We power your build with quality aggregates, steel, and cement.</p>
+                </div>
+
+                <div class="bento-card reveal">
+                    <div class="bento-icon">🚜</div>
+                    <h3 class="bento-title">Heavy Equipment</h3>
+                    <p class="bento-desc">Rental and leasing of heavy machinery for large-scale earthmoving and site prep.</p>
+                </div>
+
+                <div class="bento-card span-2 card-img reveal">
+                    <h3 class="bento-title">Design & Build</h3>
+                    <p class="bento-desc">From architectural blueprints to the final coat of paint, we handle the entire lifecycle.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="stats-strip">
+        <div class="container">
+            <div class="stats-grid">
+                <div class="stat-item reveal">
+                    <h3>126+</h3>
+                    <p>Projects Completed</p>
+                </div>
+                <div class="stat-item reveal">
+                    <h3>100%</h3>
+                    <p>Safety Compliance</p>
+                </div>
+                <div class="stat-item reveal">
+                    <h3>24/7</h3>
+                    <p>Supply Chain Ops</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section style="padding: 6rem 0; background: #fff; text-align: center;">
+        <div class="container reveal">
+            <h2 style="font-size: 3rem; margin-bottom: 1.5rem;">Ready to build the future?</h2>
+            <p style="max-width: 600px; margin: 0 auto 3rem; color: var(--text-light); font-size: 1.2rem;">
+                Contact NAM Builders & Supply Corp today for a consultation on your next commercial or industrial project.
+            </p>
+            <a href="#" class="btn btn-primary">Request a Proposal</a>
+        </div>
+    </section>
+
+    <footer id="contact">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <div class="logo" style="color: white;">
+                        <div class="logo-symbol" style="border-color: white; color: white;">NAM</div>
+                        NAM Builders
+                    </div>
+                    <p>Built for Business. Powered by Supply. Your trusted partner in construction excellence and material logistics.</p>
+                </div>
+                <div class="footer-col">
+                    <h4>Company</h4>
+                    <ul>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Careers</a></li>
+                        <li><a href="#">News</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Services</h4>
+                    <ul>
+                        <li><a href="#">Construction</a></li>
+                        <li><a href="#">Supply Chain</a></li>
+                        <li><a href="#">Equipment</a></li>
+                    </ul>
+                </div>
+                <div class="footer-col">
+                    <h4>Contact</h4>
+                    <ul>
+                        <li>123 Builders Avenue, Industrial Park</li>
+                        <li>sales@nambuilders.com</li>
+                        <li>(02) 8123-4567</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                &copy; 2024 NAM Builders and Supply Corp. All rights reserved.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Navbar scroll effect
+        window.addEventListener('scroll', function() {
+            const nav = document.getElementById('navbar');
+            if (window.scrollY > 50) {
+                nav.classList.add('scrolled');
+            } else {
+                nav.classList.remove('scrolled');
+            }
+        });
+
+        // Scroll Reveal Animation
+        function reveal() {
+            var reveals = document.querySelectorAll(".reveal");
+            for (var i = 0; i < reveals.length; i++) {
+                var windowHeight = window.innerHeight;
+                var elementTop = reveals[i].getBoundingClientRect().top;
+                var elementVisible = 150;
+                if (elementTop < windowHeight - elementVisible) {
+                    reveals[i].classList.add("active");
+                }
+            }
+        }
+        window.addEventListener("scroll", reveal);
+        // Trigger once on load
+        reveal();
+    </script>
+</body>
+</html>
