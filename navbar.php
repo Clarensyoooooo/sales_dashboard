@@ -79,6 +79,13 @@ function isActive($page) {
                             <i class="fas fa-clipboard-list me-1 d-lg-none"></i> Records
                         </a>
                     </li>
+                    
+                    <li class="nav-item">
+                        <a class="nav-link <?php echo isActive('quotations.php'); ?>" href="quotations.php">
+                            <i class="fas fa-file-invoice me-1 d-lg-none"></i> Quotations
+                        </a>
+                    </li>
+
                     <li class="nav-item">
                         <a class="nav-link <?php echo isActive('form.php'); ?>" href="form.php">
                             <i class="fas fa-plus-circle me-1 d-lg-none"></i> New Sale
