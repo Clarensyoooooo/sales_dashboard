@@ -60,15 +60,7 @@ $conn->close();
                                 </div>
                                 
                                 <div class="row g-2">
-                                    <div class="col-6">
-                                        <label class="form-label small fw-bold">Date <span class="required-star">*</span></label>
-                                        <input type="date" name="date" class="form-control form-control-sm" required value="<?php echo date('Y-m-d'); ?>">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="form-label small fw-bold">PO Number</label>
-                                        <input type="text" name="po_number" class="form-control form-control-sm">
-                                    </div>
-                                    <div class="col-12">
+                                      <div class="col-12">
                                         <label class="form-label small fw-bold">Company Name <span class="required-star">*</span></label>
                                         <input type="text" name="company" class="form-control form-control-sm" list="companyList" required placeholder="Type to search or enter new..." autocomplete="off">
                                         <datalist id="companyList">
@@ -76,6 +68,14 @@ $conn->close();
                                                 <option value="<?php echo htmlspecialchars($comp); ?>">
                                             <?php endforeach; ?>
                                         </datalist>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-bold">Date <span class="required-star">*</span></label>
+                                        <input type="date" name="date" class="form-control form-control-sm" required value="<?php echo date('Y-m-d'); ?>">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label small fw-bold">PO Number</label>
+                                        <input type="text" name="po_number" class="form-control form-control-sm">
                                     </div>
                                     <div class="col-12">
                                         <input type="text" name="address" class="form-control form-control-sm mt-1" placeholder="Address (Optional)">
@@ -89,9 +89,6 @@ $conn->close();
                                     <div class="col-6">
                                         <input type="text" name="payment_term" class="form-control form-control-sm mt-1" placeholder="Terms (e.g. 30 Days)">
                                     </div>
-                                    <div class="col-6">
-                                        <input type="date" name="due_date" class="form-control form-control-sm mt-1" title="Due Date">
-                                    </div>
                                     <div class="col-12">
                                         <textarea name="remarks" class="form-control form-control-sm mt-1" rows="1" placeholder="Remarks..."></textarea>
                                     </div>
@@ -100,6 +97,12 @@ $conn->close();
 
                             <div class="mb-4">
                                 <div class="form-section-header green">2. Item Details</div>
+
+                                 <div class="col-12">
+                                        <label class="form-label small fw-bold">Item Description <span class="required-star">*</span></label>
+                                        <input type="text" name="item" id="itemInput" list="productList" class="form-control form-control-sm" required placeholder="Type to search stock..." autocomplete="off">
+                                        <datalist id="productList"></datalist>
+                                    </div>
                                 
                                 <div class="row g-2">
                                     <div class="col-12">
@@ -117,11 +120,7 @@ $conn->close();
                                             <option value="MEDICINE">MEDICINE</option>
                                         </select>
                                     </div>
-                                    <div class="col-12">
-                                        <label class="form-label small fw-bold">Item Description <span class="required-star">*</span></label>
-                                        <input type="text" name="item" id="itemInput" list="productList" class="form-control form-control-sm" required placeholder="Type to search stock..." autocomplete="off">
-                                        <datalist id="productList"></datalist>
-                                    </div>
+                                   
                                     <div class="col-6">
                                         <label class="form-label small fw-bold">Quantity <span class="required-star">*</span></label>
                                         <input type="number" name="quantity_requested" id="quantity" class="form-control form-control-sm" required min="1" value="1">

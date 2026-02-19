@@ -1,5 +1,5 @@
 <?php
-// api.php - Updated with Delivery & Supplier Data
+// api.php - Updated with Payment Terms
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -115,9 +115,8 @@ while ($row = $result->fetch_assoc()) {
     $chart_data[] = ['label' => $row['label'], 'sales' => $sales, 'margin' => $margin];
 }
 
-// --- 5. NEW: Delivery Stats ---
+// --- 5. Delivery Stats ---
 $delivery_stats = ['delivered' => 0, 'pending' => 0];
-// Logic: If date_delivered is not null/empty/0000 -> Delivered, else Pending
 $sql = "SELECT 
             CASE WHEN date_delivered IS NOT NULL AND date_delivered != '0000-00-00' THEN 'delivered' ELSE 'pending' END as status,
             COUNT(*) as count
@@ -128,7 +127,7 @@ while($row = $result->fetch_assoc()) {
     $delivery_stats[$row['status']] = intval($row['count']);
 }
 
-// --- 6. NEW: Top Suppliers (By Cost) ---
+// --- 6. Top Suppliers (By Cost) ---
 $supplier_costs = [];
 $sql = "SELECT supplier, SUM(total_actual_amount) as total_cost 
         FROM sales $where_sql AND supplier != '' 
@@ -173,7 +172,17 @@ while ($row = $result->fetch_assoc()) {
     }
 }
 
-// --- 9. Dropdown Data ---
+// --- 9. NEW: Payment Terms ---
+$payment_terms = [];
+$sql = "SELECT UPPER(payment_term) as term, COUNT(*) as count 
+        FROM sales $where_sql AND payment_term != '' 
+        GROUP BY UPPER(payment_term) ORDER BY count DESC";
+$result = executeQuery($conn, $sql, $types, $params);
+while($row = $result->fetch_assoc()) {
+    $payment_terms[] = ['term' => $row['term'], 'count' => intval($row['count'])];
+}
+
+// --- 10. Dropdown Data ---
 $companies = [];
 $res = $conn->query("SELECT DISTINCT company FROM sales WHERE company != '' ORDER BY company");
 while($r = $res->fetch_assoc()) $companies[] = $r['company'];
@@ -181,11 +190,12 @@ while($r = $res->fetch_assoc()) $companies[] = $r['company'];
 echo json_encode([
     'stats' => $stats,
     'chart_data' => $chart_data,
-    'delivery_stats' => $delivery_stats, // NEW
-    'supplier_costs' => $supplier_costs, // NEW
+    'delivery_stats' => $delivery_stats,
+    'supplier_costs' => $supplier_costs,
     'company_sales' => $company_sales,
     'top_products' => $top_products,
     'category_matrix' => array_values($category_breakdown),
+    'payment_terms' => $payment_terms, // NEW
     'companies' => $companies
 ]);
 

@@ -5,12 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Executive Dashboard - NAM Supply</title>
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
     <style>
-        :root { --primary: #2563eb; --bg: #f8f9fa; }
+        :root { --bg: #f8f9fa; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); padding-bottom: 50px; }
         .dashboard-container { max-width: 1600px; margin: 20px auto; padding: 0 20px; }
         
@@ -43,7 +46,9 @@
         .category-row { font-weight: 600; cursor: pointer; transition: background 0.2s; }
         .category-row:hover { background: #f1f5f9; }
         
-        .scrollable-chart-wrapper { width: 100%; overflow-y: auto; max-height: 400px; position: relative; }
+        /* Horizontal Scroll for Company Chart */
+        .scrollable-chart-wrapper { width: 100%; overflow-x: auto; padding-bottom: 10px; }
+        #companyChartContainer { min-height: 400px; position: relative; }
     </style>
 </head>
 <body>
@@ -147,6 +152,33 @@
         </div>
 
         <div class="row g-4 mb-4">
+            <div class="col-lg-8">
+                <div class="chart-card">
+                    <div class="chart-title">
+                        <span><i class="fas fa-building text-info me-2"></i>Company Sales Performance</span>
+                        <small class="text-muted fw-normal">Scroll right if needed • Click bar to filter</small>
+                    </div>
+                    <div class="scrollable-chart-wrapper">
+                        <div id="companyChartContainer">
+                            <canvas id="companyChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="chart-card">
+                    <div class="chart-title">
+                        <span><i class="fas fa-file-invoice-dollar text-secondary me-2"></i>Payment Terms</span>
+                    </div>
+                    <div style="height: 250px; position:relative; margin-top: 20px;">
+                        <canvas id="termsChart"></canvas>
+                    </div>
+                    <div class="text-center text-muted small mt-2">Term Distribution (Count)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4">
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
@@ -171,24 +203,10 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-file-invoice-dollar text-danger me-2"></i>Top 5 Suppliers (Cost)</span>
+                        <span><i class="fas fa-tags text-danger me-2"></i>Top 5 Suppliers (Cost)</span>
                     </div>
                     <div style="height: 300px;">
                         <canvas id="supplierChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-body">
-                <div class="chart-title mb-3">
-                    <span><i class="fas fa-building text-info me-2"></i>Company Sales Performance</span>
-                    <small class="text-muted fw-normal">Scroll to view all clients • Click bar to filter</small>
-                </div>
-                <div class="scrollable-chart-wrapper">
-                    <div id="companyChartContainer">
-                        <canvas id="companyChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -223,6 +241,27 @@
         if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
         if(num >= 1000) return '₱' + (num/1000).toFixed(0) + 'K';
         return formatMoney(num);
+    };
+
+    // --- PROFESSIONAL COLOR PALETTE ---
+    const colors = {
+        primary:   '#4f46e5', // Indigo
+        success:   '#10b981', // Emerald
+        warning:   '#f59e0b', // Amber
+        danger:    '#ef4444', // Red
+        info:      '#0ea5e9', // Sky
+        purple:    '#8b5cf6', // Violet
+        pink:      '#ec4899', // Pink
+        orange:    '#f97316', // Orange
+        teal:      '#14b8a6', // Teal
+        slate:     '#64748b', // Slate
+        
+        // Generated Palette for Arrays
+        palette: [
+            '#4f46e5', '#10b981', '#f59e0b', '#ef4444', 
+            '#0ea5e9', '#8b5cf6', '#ec4899', '#f97316', 
+            '#14b8a6', '#6366f1'
+        ]
     };
 
     // --- STATE ---
@@ -338,6 +377,7 @@
             renderDeliveryChart(data.delivery_stats);
             renderSupplierChart(data.supplier_costs);
             renderCompanyChart(data.company_sales);
+            renderTermsChart(data.payment_terms);
             renderTopProducts(data.top_products);
             renderMatrix(data.category_matrix);
 
@@ -359,7 +399,7 @@
                 datasets: [
                     { type: 'line', label: 'Max', data: Array(data.length).fill(maxTarget), borderColor: '#166534', borderWidth: 2, borderDash: [10, 5], pointRadius: 0, order: 0 },
                     { type: 'line', label: 'Min', data: Array(data.length).fill(minTarget), borderColor: '#dc2626', borderWidth: 2, borderDash: [2, 2], pointRadius: 0, order: 1 },
-                    { type: 'bar', label: 'Revenue', data: data.map(d => d.sales), backgroundColor: '#2563eb', borderRadius: 4, order: 2 }
+                    { type: 'bar', label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.primary, borderRadius: 4, order: 2 }
                 ]
             },
             options: {
@@ -380,7 +420,7 @@
                 labels: ['Delivered', 'Pending'],
                 datasets: [{
                     data: [data.delivered, data.pending],
-                    backgroundColor: ['#10b981', '#f59e0b'],
+                    backgroundColor: [colors.success, colors.warning],
                     borderWidth: 0
                 }]
             },
@@ -390,18 +430,52 @@
             }
         });
     }
+    
+    function renderTermsChart(data) {
+        const ctx = document.getElementById('termsChart').getContext('2d');
+        if (charts.terms) charts.terms.destroy();
+
+        charts.terms = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: data.map(d => d.term),
+                datasets: [{
+                    data: data.map(d => d.count),
+                    backgroundColor: colors.palette,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                circumference: 180, // Half circle
+                rotation: -90, // Start from left
+                cutout: '60%', // Thickness
+                plugins: { 
+                    legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 11} } },
+                    datalabels: {
+                        color: '#fff',
+                        font: { weight: 'bold' },
+                        formatter: (val, ctx) => {
+                            let sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                            let pct = ((val*100) / sum).toFixed(0) + "%";
+                            return val > 0 ? pct : '';
+                        }
+                    }
+                }
+            },
+            plugins: [ChartDataLabels]
+        });
+    }
 
     function renderCategoryChart(data) {
         const ctx = document.getElementById('categoryChart').getContext('2d');
         if (charts.category) charts.category.destroy();
 
-        const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
-
         charts.category = new Chart(ctx, {
             type: 'doughnut',
             data: {
                 labels: data.map(c => c.category),
-                datasets: [{ data: data.map(c => c.total_sales), backgroundColor: colors, borderWidth: 0 }]
+                datasets: [{ data: data.map(c => c.total_sales), backgroundColor: colors.palette, borderWidth: 0 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
@@ -426,7 +500,7 @@
             type: 'bar',
             data: {
                 labels: data.map(d => d.supplier),
-                datasets: [{ label: 'Total Cost', data: data.map(d => d.cost), backgroundColor: '#ef4444', borderRadius: 4 }]
+                datasets: [{ label: 'Total Cost', data: data.map(d => d.cost), backgroundColor: colors.danger, borderRadius: 4 }]
             },
             options: {
                 indexAxis: 'y', responsive: true, maintainAspectRatio: false,
@@ -438,8 +512,9 @@
 
     function renderCompanyChart(data) {
         const container = document.getElementById('companyChartContainer');
-        const height = Math.max(400, data.length * 30);
-        container.style.height = height + 'px';
+        const minWidth = Math.max(800, data.length * 60); 
+        container.style.width = minWidth + 'px';
+        container.style.height = '400px'; 
 
         const ctx = document.getElementById('companyChart').getContext('2d');
         if (charts.company) charts.company.destroy();
@@ -451,15 +526,38 @@
                 datasets: [{ 
                     label: 'Total Sales', 
                     data: data.map(d => d.total_sales), 
-                    backgroundColor: data.map(d => d.company === activeDrills.company ? '#1e40af' : '#6366f1'),
+                    backgroundColor: colors.palette, // Cycle through colors
                     borderRadius: 3,
                     barPercentage: 0.6
                 }]
             },
             options: {
-                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } },
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { display: false },
+                    datalabels: {
+                        color: '#444',
+                        anchor: 'end',
+                        align: 'end',
+                        offset: -5,
+                        formatter: (val) => formatLarge(val),
+                        font: { weight: 'bold', size: 10 }
+                    }
+                },
+                scales: { 
+                    x: { 
+                        display: true,
+                        title: { display: true, text: 'Company', font: { weight: 'bold' } },
+                        ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } }
+                    }, 
+                    y: { 
+                        display: true,
+                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold' } },
+                        beginAtZero: true,
+                        ticks: { callback: function(value) { return formatLarge(value); } }
+                    } 
+                },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
                         const idx = elements[0].index;
@@ -468,7 +566,8 @@
                     }
                 },
                 onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
-            }
+            },
+            plugins: [ChartDataLabels]
         });
     }
 
@@ -480,7 +579,7 @@
             type: 'bar',
             data: {
                 labels: data.map(d => d.name.substring(0, 15) + (d.name.length>15 ? '...' : '')),
-                datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: '#10b981', borderRadius: 4 }]
+                datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.teal, borderRadius: 4 }]
             },
             options: {
                 indexAxis: 'y', responsive: true, maintainAspectRatio: false,
