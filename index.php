@@ -11,40 +11,48 @@
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
-        :root { --bg: #f8f9fa; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); padding-bottom: 50px; }
+        :root { --bg: #f8f9fa; --primary: #4f46e5; --text: #334155; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); padding-bottom: 50px; color: var(--text); }
         .dashboard-container { max-width: 1600px; margin: 20px auto; padding: 0 20px; }
         
         /* KPI Cards */
-        .kpi-card { border: none; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); transition: transform 0.2s; }
-        .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.08); }
-        .kpi-value { font-size: 28px; font-weight: 700; margin-top: 5px; color: #1e293b; }
-        .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; text-transform: uppercase; }
+        .kpi-card { border: none; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); transition: transform 0.2s; position: relative; overflow: hidden; background: white; }
+        .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+        .kpi-value { font-size: 28px; font-weight: 700; margin-top: 5px; color: #0f172a; }
+        .kpi-label { font-size: 12px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .icon-bg { position: absolute; right: -10px; bottom: -10px; font-size: 80px; opacity: 0.05; transform: rotate(-15deg); }
         
         /* Charts */
         .chart-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); height: 100%; border: none; }
-        .chart-title { font-size: 16px; font-weight: 700; color: #334155; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .chart-title { font-size: 16px; font-weight: 700; color: #334155; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px; }
         
         /* Filter Bar */
-        .filter-bar { background: white; padding: 15px 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); margin-bottom: 25px; }
+        .filter-bar { background: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); margin-bottom: 25px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; }
+        
+        /* Target Progress */
+        .target-widget { flex-grow: 1; max-width: 300px; min-width: 200px; }
+        .progress-label { font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .progress { height: 8px; border-radius: 4px; background-color: #e2e8f0; }
         
         /* Drill Tags */
         .drill-tag {
-            background: #eff6ff; color: #1e40af; border: 1px solid #dbeafe;
-            padding: 5px 12px; border-radius: 20px; font-size: 13px; font-weight: 600;
-            display: inline-flex; align-items: center; gap: 8px; margin-right: 8px;
-            cursor: default;
+            background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe;
+            padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 6px; margin-right: 8px;
+            cursor: default; transition: all 0.2s;
         }
-        .drill-tag i.fa-times { cursor: pointer; color: #3b82f6; transition: color 0.2s; }
-        .drill-tag i.fa-times:hover { color: #1d4ed8; }
+        .drill-tag:hover { background: #c7d2fe; }
+        .drill-tag i.fa-times { cursor: pointer; color: #4338ca; opacity: 0.7; }
+        .drill-tag i.fa-times:hover { opacity: 1; }
 
         /* Matrix Table */
-        .matrix-table th { font-size: 12px; text-transform: uppercase; color: #64748b; background: #f8fafc; padding: 12px; }
-        .matrix-table td { font-size: 14px; padding: 12px; border-bottom: 1px solid #f1f5f9; }
-        .category-row { font-weight: 600; cursor: pointer; transition: background 0.2s; }
-        .category-row:hover { background: #f1f5f9; }
+        .matrix-table th { font-size: 11px; text-transform: uppercase; color: #64748b; background: #f8fafc; padding: 12px; font-weight: 700; letter-spacing: 0.5px; }
+        .matrix-table td { font-size: 14px; padding: 12px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        .category-row { font-weight: 600; cursor: pointer; transition: background 0.1s; }
+        .category-row:hover { background: #f8fafc; }
         
         /* Horizontal Scroll for Company Chart */
         .scrollable-chart-wrapper { width: 100%; overflow-x: auto; padding-bottom: 10px; }
@@ -58,71 +66,86 @@
     <div class="dashboard-container">
 
         <div class="filter-bar">
-            <div class="d-flex flex-wrap gap-3 align-items-end justify-content-between mb-3">
-                <div class="d-flex gap-3 align-items-end flex-wrap">
-                    <div>
-                        <label class="small fw-bold text-muted d-block mb-1">Time Period</label>
-                        <select id="periodFilter" class="form-select form-select-sm" style="width: 160px;" onchange="handlePeriodChange()">
-                            <option value="today">Daily (Today)</option>
-                            <option value="week">Weekly (This Week)</option>
-                            <option value="month" selected>Monthly (This Month)</option>
-                            <option value="quarter">Quarterly (This Year)</option>
-                            <option value="year">Yearly (This Year)</option>
-                            <option value="custom_month">Specific Month</option>
-                        </select>
+            <div class="d-flex gap-3 align-items-end flex-wrap">
+                <div>
+                    <label class="small fw-bold text-muted d-block mb-1">Time Period</label>
+                    <select id="periodFilter" class="form-select form-select-sm shadow-none border-secondary-subtle" style="width: 150px; font-weight: 600;" onchange="handlePeriodChange()">
+                        <option value="today">Daily (Today)</option>
+                        <option value="week">Weekly (This Week)</option>
+                        <option value="month" selected>Monthly (This Month)</option>
+                        <option value="quarter">Quarterly (This Year)</option>
+                        <option value="year">Yearly (This Year)</option>
+                        <option value="custom_month">Specific Month</option>
+                    </select>
+                </div>
+                <div id="monthPickerGroup" style="display:none;">
+                    <label class="small fw-bold text-muted d-block mb-1">Select Month</label>
+                    <input type="month" id="monthPicker" class="form-control form-control-sm shadow-none" onchange="updateDashboard()">
+                </div>
+                <div>
+                    <label class="small fw-bold text-muted d-block mb-1">Targets (Min / Max)</label>
+                    <div class="input-group input-group-sm">
+                        <input type="number" id="minTarget" class="form-control shadow-none" value="100000" step="10000" placeholder="Min" style="width: 80px;">
+                        <input type="number" id="maxTarget" class="form-control shadow-none" value="200000" step="10000" placeholder="Max" onchange="updateTargetWidget()" style="width: 80px;">
                     </div>
-                    <div id="monthPickerGroup" style="display:none;">
-                        <label class="small fw-bold text-muted d-block mb-1">Select Month</label>
-                        <input type="month" id="monthPicker" class="form-control form-control-sm" onchange="updateDashboard()">
-                    </div>
-                    <div>
-                        <label class="small fw-bold text-muted d-block mb-1">Min Target</label>
-                        <input type="number" id="minTarget" class="form-control form-control-sm" value="100000" step="10000" style="width: 110px;">
-                    </div>
-                    <div>
-                        <label class="small fw-bold text-muted d-block mb-1">Max Target</label>
-                        <input type="number" id="maxTarget" class="form-control form-control-sm" value="200000" step="10000" style="width: 110px;">
-                    </div>
-                    <div class="d-flex align-items-end pb-1">
-                         <button onclick="updateDashboard()" class="btn btn-primary btn-sm fw-bold px-3 ms-2">Apply</button>
-                    </div>
+                </div>
+                <div class="d-flex align-items-end pb-1">
+                     <button onclick="updateDashboard()" class="btn btn-primary btn-sm fw-bold px-3 shadow-sm"><i class="fas fa-sync-alt me-1"></i> Apply</button>
+                </div>
+            </div>
+
+            <div class="target-widget border-start ps-4 ms-2 d-none d-lg-block">
+                <div class="progress-label">
+                    <span class="text-primary"><i class="fas fa-bullseye me-1"></i>Goal Progress</span>
+                    <span id="targetText" class="text-dark">0%</span>
+                </div>
+                <div class="progress">
+                    <div id="targetBar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="d-flex justify-content-between mt-1">
+                    <small class="text-muted" style="font-size: 10px;">Current: <span id="currentSales" class="fw-bold">₱0</span></small>
+                    <small class="text-muted" style="font-size: 10px;">Goal: <span id="goalSales" class="fw-bold">₱0</span></small>
                 </div>
             </div>
             
-            <div id="activeFiltersArea" class="d-flex flex-wrap align-items-center" style="min-height: 30px;">
-                <span class="small text-muted me-2"><i class="fas fa-filter me-1"></i>Active Filters:</span>
+            <div id="activeFiltersArea" class="w-100 mt-2 pt-2 border-top d-flex align-items-center" style="display:none !important;">
+                <span class="small text-muted me-2 fw-bold"><i class="fas fa-filter me-1"></i>Filtered By:</span>
                 <span id="drillTags"></span>
-                <button onclick="resetAllDrills()" class="btn btn-link btn-sm text-muted text-decoration-none py-0 small" id="resetBtn" style="display:none;">Reset All</button>
+                <button onclick="resetAllDrills()" class="btn btn-link btn-sm text-danger text-decoration-none py-0 small fw-bold" id="resetBtn" style="display:none;">Clear All</button>
             </div>
         </div>
 
         <div class="row g-3 mb-4">
             <div class="col-md-3">
-                <div class="kpi-card p-3 bg-white h-100">
-                    <div class="kpi-label">Total Revenue</div>
+                <div class="kpi-card p-4 h-100">
+                    <div class="kpi-label text-primary">Total Revenue</div>
                     <div class="kpi-value" id="totalSales">₱0.00</div>
                     <div class="mt-2" id="growthBadge"></div>
+                    <i class="fas fa-coins icon-bg text-primary"></i>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="kpi-card p-3 bg-white h-100">
-                    <div class="kpi-label">Net Profit</div>
-                    <div class="kpi-value text-success" id="totalProfit">₱0.00</div>
-                    <div class="small text-muted mt-1">Margin: <span class="fw-bold" id="profitMargin">0%</span></div>
+                <div class="kpi-card p-4 h-100">
+                    <div class="kpi-label text-success">Net Profit</div>
+                    <div class="kpi-value" id="totalProfit">₱0.00</div>
+                    <div class="small text-muted mt-1 fw-bold">Margin: <span class="text-success" id="profitMargin">0%</span></div>
+                    <i class="fas fa-chart-line icon-bg text-success"></i>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="kpi-card p-3 bg-white h-100">
-                    <div class="kpi-label">Avg. Order Value</div>
-                    <div class="kpi-value text-info" id="avgOrder">₱0.00</div>
-                    <div class="small text-muted mt-1" id="orderCount">0 Orders</div>
+                <div class="kpi-card p-4 h-100">
+                    <div class="kpi-label text-info">Avg. Order Value</div>
+                    <div class="kpi-value" id="avgOrder">₱0.00</div>
+                    <div class="small text-muted mt-1 fw-bold" id="orderCount">0 Orders</div>
+                    <i class="fas fa-shopping-cart icon-bg text-info"></i>
                 </div>
             </div>
             <div class="col-md-3">
-                <div class="kpi-card p-3 bg-white h-100">
-                    <div class="kpi-label">Stock Alerts</div>
-                    <div class="kpi-value text-danger" id="lowStockCount">0</div>
-                    <a href="products.php" class="small text-decoration-none text-danger mt-1 d-block">View Inventory &rarr;</a>
+                <div class="kpi-card p-4 h-100">
+                    <div class="kpi-label text-danger">Stock Alerts</div>
+                    <div class="kpi-value" id="lowStockCount">0</div>
+                    <a href="products.php" class="small text-decoration-none text-danger mt-1 d-block fw-bold">View Inventory <i class="fas fa-arrow-right ms-1"></i></a>
+                    <i class="fas fa-box-open icon-bg text-danger"></i>
                 </div>
             </div>
         </div>
@@ -131,8 +154,7 @@
             <div class="col-lg-8">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-chart-line text-primary me-2"></i>Sales Performance</span>
-                        <small class="text-muted fw-normal" style="font-size:11px;">Min/Max Targets Active</small>
+                        <span><i class="fas fa-chart-bar text-primary me-2"></i>Sales Performance</span>
                     </div>
                     <div style="height: 320px;">
                         <canvas id="dailyChart"></canvas>
@@ -142,7 +164,7 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-truck text-success me-2"></i>Logistics Status</span>
+                        <span><i class="fas fa-shipping-fast text-success me-2"></i>Logistics Status</span>
                     </div>
                     <div style="height: 320px; position:relative;">
                         <canvas id="deliveryChart"></canvas>
@@ -155,8 +177,8 @@
             <div class="col-lg-8">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-building text-info me-2"></i>Company Sales Performance</span>
-                        <small class="text-muted fw-normal">Scroll right if needed • Click bar to filter</small>
+                        <span><i class="fas fa-building text-info me-2"></i>Company Performance</span>
+                        <small class="text-muted fw-normal" style="font-size: 11px;">Click bar to filter</small>
                     </div>
                     <div class="scrollable-chart-wrapper">
                         <div id="companyChartContainer">
@@ -170,10 +192,9 @@
                     <div class="chart-title">
                         <span><i class="fas fa-file-invoice-dollar text-secondary me-2"></i>Revenue by Terms</span>
                     </div>
-                    <div style="height: 320px; position:relative;">
+                    <div style="height: 300px; position:relative;">
                         <canvas id="termsChart"></canvas>
                     </div>
-                    <div class="text-center text-muted small mt-2">Cash Flow Impact</div>
                 </div>
             </div>
         </div>
@@ -182,8 +203,7 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-chart-pie text-warning me-2"></i>Sales by Category</span>
-                        <small class="text-muted fw-normal" style="font-size:11px;">Click to Filter</small>
+                        <span><i class="fas fa-chart-pie text-warning me-2"></i>By Category</span>
                     </div>
                     <div style="height: 300px;">
                         <canvas id="categoryChart"></canvas>
@@ -193,7 +213,7 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-crown text-warning me-2"></i>Top 10 Products</span>
+                        <span><i class="fas fa-crown text-warning me-2"></i>Top Products</span>
                     </div>
                     <div style="height: 300px;">
                         <canvas id="topProductsChart"></canvas>
@@ -203,7 +223,7 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-tags text-danger me-2"></i>Top 5 Suppliers (Cost)</span>
+                        <span><i class="fas fa-tags text-danger me-2"></i>Supplier Costs</span>
                     </div>
                     <div style="height: 300px;">
                         <canvas id="supplierChart"></canvas>
@@ -212,13 +232,13 @@
             </div>
         </div>
 
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-white py-3">
-                <h6 class="mb-0 fw-bold"><i class="fas fa-table me-2"></i>Detailed Sales Matrix</h6>
+        <div class="card shadow-sm border-0 mb-5">
+            <div class="card-header bg-white py-3 border-bottom">
+                <h6 class="mb-0 fw-bold text-dark"><i class="fas fa-table me-2 text-muted"></i>Detailed Sales Matrix</h6>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table mb-0 matrix-table">
+                    <table class="table mb-0 matrix-table table-hover">
                         <thead>
                             <tr>
                                 <th width="40%">Category / Item</th>
@@ -236,6 +256,7 @@
     </div>
 
     <script>
+    // --- UTILS ---
     const formatMoney = (num) => '₱' + parseFloat(num).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const formatLarge = (num) => {
         if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
@@ -243,38 +264,33 @@
         return formatMoney(num);
     };
 
-    // --- PROFESSIONAL COLOR PALETTE ---
+    // --- COLOR PALETTE (Pleasant/Soft) ---
     const colors = {
-        primary:   '#4f46e5', // Indigo
-        success:   '#10b981', // Emerald
-        warning:   '#f59e0b', // Amber
-        danger:    '#ef4444', // Red
-        info:      '#0ea5e9', // Sky
-        purple:    '#8b5cf6', // Violet
-        pink:      '#ec4899', // Pink
-        orange:    '#f97316', // Orange
-        teal:      '#14b8a6', // Teal
-        slate:     '#64748b', // Slate
+        primary:   '#6366f1', // Indigo-500
+        primarySoft: 'rgba(99, 102, 241, 0.7)',
+        secondary: '#64748b', // Slate-500
+        success:   '#10b981', // Emerald-500
+        warning:   '#f59e0b', // Amber-500
+        danger:    '#ef4444', // Red-500
+        info:      '#0ea5e9', // Sky-500
         
-        // Transparent palette for Polar Area
         transparentPalette: [
-            'rgba(79, 70, 229, 0.6)', 
+            'rgba(99, 102, 241, 0.6)', 
             'rgba(16, 185, 129, 0.6)', 
             'rgba(245, 158, 11, 0.6)', 
             'rgba(239, 68, 68, 0.6)', 
             'rgba(14, 165, 233, 0.6)', 
             'rgba(139, 92, 246, 0.6)'
         ],
-        // Solid palette for others
         palette: [
-            '#4f46e5', '#10b981', '#f59e0b', '#ef4444', 
-            '#0ea5e9', '#8b5cf6', '#ec4899', '#f97316', 
-            '#14b8a6', '#6366f1'
+            '#6366f1', '#10b981', '#f59e0b', '#ef4444', 
+            '#0ea5e9', '#8b5cf6', '#ec4899', '#f97316'
         ]
     };
 
     // --- STATE ---
     let activeDrills = { company: null, category: null };
+    let currentTotalSales = 0;
     let charts = {}; 
 
     function handlePeriodChange() {
@@ -309,6 +325,7 @@
 
     function renderDrillTags() {
         const container = document.getElementById('drillTags');
+        const area = document.getElementById('activeFiltersArea');
         const resetBtn = document.getElementById('resetBtn');
         let html = '';
         let hasActive = false;
@@ -323,12 +340,32 @@
         }
         
         container.innerHTML = html;
+        area.style.display = hasActive ? 'flex' : 'none';
         resetBtn.style.display = hasActive ? 'inline-block' : 'none';
+    }
+
+    function updateTargetWidget() {
+        const max = parseFloat(document.getElementById('maxTarget').value) || 1;
+        const current = currentTotalSales;
+        const pct = Math.min(100, Math.round((current / max) * 100));
+        
+        document.getElementById('targetBar').style.width = pct + '%';
+        document.getElementById('targetText').innerText = pct + '%';
+        document.getElementById('currentSales').innerText = formatLarge(current);
+        document.getElementById('goalSales').innerText = formatLarge(max);
+        
+        const bar = document.getElementById('targetBar');
+        bar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+        if(pct >= 100) bar.classList.add('bg-success');
+        else if(pct >= 70) bar.classList.add('bg-primary');
+        else if(pct >= 40) bar.classList.add('bg-warning');
+        else bar.classList.add('bg-danger');
     }
 
     async function updateDashboard() {
         await fetchSalesData();
         await fetchInventoryData();
+        updateTargetWidget();
     }
 
     async function fetchInventoryData() {
@@ -365,19 +402,20 @@
             const data = await res.json();
 
             // KPIs
+            currentTotalSales = data.stats.total_sales;
             document.getElementById('totalSales').textContent = formatLarge(data.stats.total_sales);
             document.getElementById('totalProfit').textContent = formatLarge(data.stats.total_profit);
             document.getElementById('profitMargin').textContent = data.stats.profit_margin.toFixed(1) + '%';
             document.getElementById('avgOrder').textContent = formatMoney(data.stats.avg_order_value);
             document.getElementById('orderCount').textContent = `${data.stats.total_orders} Orders`;
 
-            // Growth
+            // Growth Badge
             const growth = data.stats.growth_sales || 0;
             const growthBadge = document.getElementById('growthBadge');
             if (period === 'custom_month' || period === 'month' || period === 'year') {
                 const icon = growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
-                const cls = growth >= 0 ? 'trend-up' : 'trend-down';
-                growthBadge.innerHTML = `<span class="badge ${cls} text-dark"><i class="fas ${icon}"></i> ${Math.abs(growth).toFixed(1)}% vs prev</span>`;
+                const color = growth >= 0 ? 'text-success' : 'text-danger';
+                growthBadge.innerHTML = `<small class="${color} fw-bold"><i class="fas ${icon}"></i> ${Math.abs(growth).toFixed(1)}% vs prev</small>`;
             } else growthBadge.innerHTML = '';
 
             // Render Charts
@@ -389,6 +427,8 @@
             renderTermsChart(data.payment_terms);
             renderTopProducts(data.top_products);
             renderMatrix(data.category_matrix);
+            
+            updateTargetWidget();
 
         } catch (err) { console.error("Sales data error:", err); }
     }
@@ -396,8 +436,9 @@
     // --- CHART FUNCTIONS ---
     function renderDailyChart(data) {
         const ctx = document.getElementById('dailyChart').getContext('2d');
+        // Updated Default Values
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
-        const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 150000;
+        const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
 
         if (charts.daily) charts.daily.destroy();
 
@@ -406,15 +447,87 @@
             data: {
                 labels: data.map(d => d.label),
                 datasets: [
-                    { type: 'line', label: 'Max', data: Array(data.length).fill(maxTarget), borderColor: '#166534', borderWidth: 2, borderDash: [10, 5], pointRadius: 0, order: 0 },
-                    { type: 'line', label: 'Min', data: Array(data.length).fill(minTarget), borderColor: '#dc2626', borderWidth: 2, borderDash: [2, 2], pointRadius: 0, order: 1 },
-                    { type: 'bar', label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.primary, borderRadius: 4, order: 2 }
+                    // Order 0 = Drawn Last (Top)
+                    { 
+                        type: 'line', 
+                        label: 'Profit Margin', 
+                        data: data.map(d => d.margin), 
+                        yAxisID: 'y1',
+                        borderColor: colors.warning, // Amber
+                        backgroundColor: colors.warning,
+                        borderWidth: 2, 
+                        borderDash: [5, 3],
+                        pointRadius: 3,
+                        order: 0 
+                    },
+                    { 
+                        type: 'line', 
+                        label: 'Sales Trend', 
+                        data: data.map(d => d.sales), 
+                        yAxisID: 'y',
+                        borderColor: '#4338ca', // Darker Indigo
+                        borderWidth: 2,
+                        tension: 0.3, 
+                        pointRadius: 0,
+                        order: 1 
+                    },
+                    { 
+                        type: 'line', 
+                        label: 'Max Target', 
+                        data: Array(data.length).fill(maxTarget), 
+                        yAxisID: 'y',
+                        borderColor: colors.success, 
+                        borderWidth: 2, 
+                        borderDash: [6, 4], 
+                        pointRadius: 0, 
+                        order: 2 
+                    },
+                    { 
+                        type: 'line', 
+                        label: 'Min Target', 
+                        data: Array(data.length).fill(minTarget), 
+                        yAxisID: 'y',
+                        borderColor: colors.danger, 
+                        borderWidth: 2, 
+                        borderDash: [2, 2], 
+                        pointRadius: 0, 
+                        order: 3 
+                    },
+                    { 
+                        type: 'bar', 
+                        label: 'Revenue', 
+                        data: data.map(d => d.sales), 
+                        yAxisID: 'y',
+                        backgroundColor: colors.primarySoft, 
+                        borderRadius: 4, 
+                        order: 4
+                    }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true, grid: { borderDash: [5, 5] } }, x: { grid: { display: false } } }
+                plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 15 } } },
+                scales: { 
+                    y: { 
+                        beginAtZero: true, 
+                        position: 'left',
+                        grid: { borderDash: [4, 4], color: '#e2e8f0' },
+                        ticks: { callback: function(val) { return '₱' + (val/1000) + 'k'; }, color: '#64748b' },
+                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 11 }, color: '#475569' }
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        position: 'right',
+                        grid: { display: false },
+                        ticks: { callback: function(val) { return val + '%'; }, color: '#64748b' },
+                        title: { display: true, text: 'Margin (%)', font: { weight: 'bold', size: 11 }, color: '#475569' }
+                    },
+                    x: { 
+                        grid: { display: false },
+                        ticks: { color: '#64748b' },
+                        title: { display: true, text: 'Timeline', font: { weight: 'bold', size: 11 }, color: '#475569' }
+                    } 
+                }
             }
         });
     }
@@ -424,7 +537,7 @@
         if (charts.delivery) charts.delivery.destroy();
 
         charts.delivery = new Chart(ctx, {
-            type: 'pie',
+            type: 'doughnut',
             data: {
                 labels: ['Delivered', 'Pending'],
                 datasets: [{
@@ -435,12 +548,14 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { position: 'right', labels: { boxWidth: 12 } } }
+                cutout: '70%',
+                plugins: { 
+                    legend: { position: 'right', labels: { boxWidth: 12, usePointStyle: true } }
+                }
             }
         });
     }
     
-    // --- UPDATED: POLAR AREA CHART FOR REVENUE ---
     function renderTermsChart(data) {
         const ctx = document.getElementById('termsChart').getContext('2d');
         if (charts.terms) charts.terms.destroy();
@@ -450,7 +565,7 @@
             data: {
                 labels: data.map(d => d.term),
                 datasets: [{
-                    data: data.map(d => d.sales), // Use SALES, not count
+                    data: data.map(d => d.sales), 
                     backgroundColor: colors.transparentPalette,
                     borderWidth: 1,
                     borderColor: '#fff'
@@ -458,21 +573,10 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                scales: {
-                    r: { ticks: { display: false }, grid: { color: '#e5e7eb' } }
-                },
+                scales: { r: { ticks: { display: false }, grid: { color: '#f1f5f9' } } },
                 plugins: { 
-                    legend: { position: 'right', labels: { boxWidth: 12, font: {size: 11} } },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => {
-                                const val = formatLarge(ctx.raw);
-                                const count = data[ctx.dataIndex].count;
-                                return `${ctx.label}: ${val} (${count} orders)`;
-                            }
-                        }
-                    },
-                    datalabels: { display: false } // Too cluttered for polar
+                    legend: { position: 'right', labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true } },
+                    datalabels: { display: false }
                 }
             }
         });
@@ -490,7 +594,7 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 12 } } },
+                plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 12, usePointStyle: true } } },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
                         const idx = elements[0].index;
@@ -537,37 +641,24 @@
                 datasets: [{ 
                     label: 'Total Sales', 
                     data: data.map(d => d.total_sales), 
-                    backgroundColor: colors.palette, // Cycle through colors
+                    backgroundColor: colors.palette, 
                     borderRadius: 3,
                     barPercentage: 0.6
                 }]
             },
             options: {
-                responsive: true, 
-                maintainAspectRatio: false,
+                responsive: true, maintainAspectRatio: false,
                 plugins: { 
                     legend: { display: false },
                     datalabels: {
-                        color: '#444',
-                        anchor: 'end',
-                        align: 'end',
-                        offset: -5,
+                        color: '#444', anchor: 'end', align: 'end', offset: -5,
                         formatter: (val) => formatLarge(val),
                         font: { weight: 'bold', size: 10 }
                     }
                 },
                 scales: { 
-                    x: { 
-                        display: true,
-                        title: { display: true, text: 'Company', font: { weight: 'bold' } },
-                        ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } }
-                    }, 
-                    y: { 
-                        display: true,
-                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold' } },
-                        beginAtZero: true,
-                        ticks: { callback: function(value) { return formatLarge(value); } }
-                    } 
+                    x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } }, 
+                    y: { display: true, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, beginAtZero: true, ticks: { callback: function(value) { return formatLarge(value); } } } 
                 },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
@@ -590,7 +681,7 @@
             type: 'bar',
             data: {
                 labels: data.map(d => d.name.substring(0, 15) + (d.name.length>15 ? '...' : '')),
-                datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.teal, borderRadius: 4 }]
+                datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.info, borderRadius: 4 }]
             },
             options: {
                 indexAxis: 'y', responsive: true, maintainAspectRatio: false,
@@ -608,13 +699,13 @@
             const rowId = `cat-${index}`;
             const parentHtml = `
                 <tr class="category-row" onclick="toggleRow('${rowId}', this)">
-                    <td><i class="fas fa-chevron-right toggle-icon"></i> ${cat.category}</td>
+                    <td><i class="fas fa-chevron-right toggle-icon text-muted me-2"></i> ${cat.category}</td>
                     <td class="text-end fw-bold">${cat.quantity}</td>
                     <td class="text-end fw-bold text-primary">${formatLarge(cat.total_sales)}</td>
                     <td class="text-end fw-bold text-success">${formatLarge(cat.total_profit)}</td>
                 </tr>
             `;
-            let childrenHtml = `<tr id="${rowId}" style="display:none;"><td colspan="4"><div class="nested-container"><table class="table table-sm table-borderless mb-0">`;
+            let childrenHtml = `<tr id="${rowId}" style="display:none;"><td colspan="4"><div class="nested-container bg-light p-2 rounded"><table class="table table-sm table-borderless mb-0">`;
             cat.items.forEach(item => {
                 childrenHtml += `
                     <tr>
