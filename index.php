@@ -81,7 +81,7 @@
                     </div>
                     <div>
                         <label class="small fw-bold text-muted d-block mb-1">Max Target</label>
-                        <input type="number" id="maxTarget" class="form-control form-control-sm" value="150000" step="10000" style="width: 110px;">
+                        <input type="number" id="maxTarget" class="form-control form-control-sm" value="200000" step="10000" style="width: 110px;">
                     </div>
                     <div class="d-flex align-items-end pb-1">
                          <button onclick="updateDashboard()" class="btn btn-primary btn-sm fw-bold px-3 ms-2">Apply</button>
@@ -168,12 +168,12 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-file-invoice-dollar text-secondary me-2"></i>Payment Terms</span>
+                        <span><i class="fas fa-file-invoice-dollar text-secondary me-2"></i>Revenue by Terms</span>
                     </div>
-                    <div style="height: 250px; position:relative; margin-top: 20px;">
+                    <div style="height: 320px; position:relative;">
                         <canvas id="termsChart"></canvas>
                     </div>
-                    <div class="text-center text-muted small mt-2">Term Distribution (Count)</div>
+                    <div class="text-center text-muted small mt-2">Cash Flow Impact</div>
                 </div>
             </div>
         </div>
@@ -256,7 +256,16 @@
         teal:      '#14b8a6', // Teal
         slate:     '#64748b', // Slate
         
-        // Generated Palette for Arrays
+        // Transparent palette for Polar Area
+        transparentPalette: [
+            'rgba(79, 70, 229, 0.6)', 
+            'rgba(16, 185, 129, 0.6)', 
+            'rgba(245, 158, 11, 0.6)', 
+            'rgba(239, 68, 68, 0.6)', 
+            'rgba(14, 165, 233, 0.6)', 
+            'rgba(139, 92, 246, 0.6)'
+        ],
+        // Solid palette for others
         palette: [
             '#4f46e5', '#10b981', '#f59e0b', '#ef4444', 
             '#0ea5e9', '#8b5cf6', '#ec4899', '#f97316', 
@@ -431,39 +440,41 @@
         });
     }
     
+    // --- UPDATED: POLAR AREA CHART FOR REVENUE ---
     function renderTermsChart(data) {
         const ctx = document.getElementById('termsChart').getContext('2d');
         if (charts.terms) charts.terms.destroy();
 
         charts.terms = new Chart(ctx, {
-            type: 'doughnut',
+            type: 'polarArea',
             data: {
                 labels: data.map(d => d.term),
                 datasets: [{
-                    data: data.map(d => d.count),
-                    backgroundColor: colors.palette,
-                    borderWidth: 0
+                    data: data.map(d => d.sales), // Use SALES, not count
+                    backgroundColor: colors.transparentPalette,
+                    borderWidth: 1,
+                    borderColor: '#fff'
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                circumference: 180, // Half circle
-                rotation: -90, // Start from left
-                cutout: '60%', // Thickness
+                scales: {
+                    r: { ticks: { display: false }, grid: { color: '#e5e7eb' } }
+                },
                 plugins: { 
-                    legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 11} } },
-                    datalabels: {
-                        color: '#fff',
-                        font: { weight: 'bold' },
-                        formatter: (val, ctx) => {
-                            let sum = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                            let pct = ((val*100) / sum).toFixed(0) + "%";
-                            return val > 0 ? pct : '';
+                    legend: { position: 'right', labels: { boxWidth: 12, font: {size: 11} } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const val = formatLarge(ctx.raw);
+                                const count = data[ctx.dataIndex].count;
+                                return `${ctx.label}: ${val} (${count} orders)`;
+                            }
                         }
-                    }
+                    },
+                    datalabels: { display: false } // Too cluttered for polar
                 }
-            },
-            plugins: [ChartDataLabels]
+            }
         });
     }
 

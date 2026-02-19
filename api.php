@@ -1,5 +1,5 @@
 <?php
-// api.php - Updated with Payment Terms
+// api.php - Updated for Revenue-based Payment Terms
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -172,14 +172,18 @@ while ($row = $result->fetch_assoc()) {
     }
 }
 
-// --- 9. NEW: Payment Terms ---
+// --- 9. NEW: Payment Terms (By Revenue) ---
 $payment_terms = [];
-$sql = "SELECT UPPER(payment_term) as term, COUNT(*) as count 
+$sql = "SELECT UPPER(payment_term) as term, COUNT(*) as count, SUM(total_nam_amount) as sales 
         FROM sales $where_sql AND payment_term != '' 
-        GROUP BY UPPER(payment_term) ORDER BY count DESC";
+        GROUP BY UPPER(payment_term) ORDER BY sales DESC";
 $result = executeQuery($conn, $sql, $types, $params);
 while($row = $result->fetch_assoc()) {
-    $payment_terms[] = ['term' => $row['term'], 'count' => intval($row['count'])];
+    $payment_terms[] = [
+        'term' => $row['term'], 
+        'count' => intval($row['count']),
+        'sales' => floatval($row['sales'])
+    ];
 }
 
 // --- 10. Dropdown Data ---
@@ -195,7 +199,7 @@ echo json_encode([
     'company_sales' => $company_sales,
     'top_products' => $top_products,
     'category_matrix' => array_values($category_breakdown),
-    'payment_terms' => $payment_terms, // NEW
+    'payment_terms' => $payment_terms,
     'companies' => $companies
 ]);
 
