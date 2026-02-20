@@ -22,7 +22,7 @@
 
     <?php include 'navbar.php'; ?>
 
-    <div class="container-fluid mt-4 px-4">
+    <div class="container-fluid mt-4 px-4 pb-5">
         
         <div class="row g-3 mb-4">
             <div class="col-md-4">
@@ -78,7 +78,7 @@
                         </div>
                     </div>
                     <div class="col-md-6 text-md-end">
-                        <button onclick="openModal()" class="btn btn-primary fw-bold">
+                        <button onclick="openModal()" class="btn btn-primary fw-bold shadow-sm">
                             <i class="fas fa-plus-circle me-2"></i>Add New Product
                         </button>
                     </div>
@@ -125,12 +125,12 @@
     <div class="modal fade" id="productModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold text-primary" id="modalTitle"><i class="fas fa-box me-2"></i>Add Product</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title fw-bold" id="modalTitle"><i class="fas fa-box me-2"></i>Add Product</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <form id="productForm" onsubmit="saveProduct(event)">
-                    <div class="modal-body">
+                    <div class="modal-body bg-light">
                         <input type="hidden" name="id" id="prodId">
                         
                         <div class="mb-3">
@@ -160,8 +160,8 @@
                             </div>
                         </div>
 
-                        <div class="card bg-light border-0 mb-3">
-                            <div class="card-body py-2">
+                        <div class="card bg-white border-secondary-subtle mb-3">
+                            <div class="card-body py-3">
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label class="form-label fw-bold small text-success text-uppercase">Current Stock</label>
@@ -180,25 +180,46 @@
                             <input type="text" name="supplier" id="prodSupplier" class="form-control" placeholder="Enter supplier name">
                         </div>
 
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small text-muted text-uppercase">Supplier Price (₱)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text">₱</span>
-                                    <input type="number" step="0.01" name="supplier_price" id="prodSPrice" class="form-control" required placeholder="0.00">
-                                </div>
+                        <div class="card bg-white border-primary-subtle shadow-sm">
+                            <div class="card-header bg-primary text-white py-2">
+                                <h6 class="mb-0 fw-bold small"><i class="fas fa-calculator me-2"></i>Pricing & Margin Calculator</h6>
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold small text-primary text-uppercase">NAM Price (₱)</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-primary text-white border-primary">₱</span>
-                                    <input type="number" step="0.01" name="nam_price" id="prodNPrice" class="form-control border-primary" required placeholder="0.00">
+                            <div class="card-body py-3">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-muted text-uppercase">Supplier Price <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text">₱</span>
+                                            <input type="number" step="0.01" name="supplier_price" id="prodSPrice" class="form-control" required placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-primary text-uppercase">Selling (NAM) Price <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                            <input type="number" step="0.01" name="nam_price" id="prodNPrice" class="form-control border-primary" required placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-muted text-uppercase">Markup (%)</label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.01" id="prodMarkup" class="form-control" placeholder="e.g. 35">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-muted text-uppercase">Margin (%)</label>
+                                        <div class="input-group">
+                                            <input type="number" step="0.01" id="prodMargin" class="form-control" placeholder="Auto-calculated">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
                     </div>
-                    <div class="modal-footer bg-light">
+                    <div class="modal-footer bg-white">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-primary fw-bold"><i class="fas fa-save me-2"></i>Save Product</button>
                     </div>
@@ -218,8 +239,53 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             productModal = new bootstrap.Modal(document.getElementById('productModal'));
+            attachPriceCalculators('prodSPrice', 'prodNPrice', 'prodMarkup', 'prodMargin');
             loadProducts();
         });
+
+        // --- PRICING CALCULATOR LOGIC ---
+        function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId) {
+            const sPrice = document.getElementById(sPriceId);
+            const nPrice = document.getElementById(nPriceId);
+            const markup = document.getElementById(markupId);
+            const margin = document.getElementById(marginId);
+
+            function calcFromPrice() {
+                let s = parseFloat(sPrice.value) || 0;
+                let n = parseFloat(nPrice.value) || 0;
+                if (s > 0 && n > 0) {
+                    markup.value = (((n - s) / s) * 100).toFixed(2);
+                    margin.value = (((n - s) / n) * 100).toFixed(2);
+                } else {
+                    markup.value = ''; margin.value = '';
+                }
+            }
+
+            function calcFromMarkup() {
+                let s = parseFloat(sPrice.value) || 0;
+                let mk = parseFloat(markup.value) || 0;
+                if (s > 0) {
+                    let n = s * (1 + (mk / 100));
+                    nPrice.value = n.toFixed(2);
+                    margin.value = (((n - s) / n) * 100).toFixed(2);
+                }
+            }
+
+            function calcFromMargin() {
+                let s = parseFloat(sPrice.value) || 0;
+                let mg = parseFloat(margin.value) || 0;
+                if (s > 0 && mg < 100) {
+                    let n = s / (1 - (mg / 100));
+                    nPrice.value = n.toFixed(2);
+                    markup.value = (((n - s) / s) * 100).toFixed(2);
+                }
+            }
+
+            if(sPrice) sPrice.addEventListener('input', calcFromPrice);
+            if(nPrice) nPrice.addEventListener('input', calcFromPrice);
+            if(markup) markup.addEventListener('input', calcFromMarkup);
+            if(margin) margin.addEventListener('input', calcFromMargin);
+        }
 
         function showAlert(message, type = 'success') {
             const container = document.getElementById('alertContainer');
@@ -288,15 +354,13 @@
                     : `<span class="badge bg-success">${stock}</span>`;
 
                 tr.innerHTML = `
-                    <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name}">${p.name}</td>
+                    <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name}</td>
                     <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
                     <td class="text-muted small">${p.unit || '-'}</td>
                     <td class="small">${p.supplier || '-'}</td>
                     <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
                     <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    
                     <td class="text-center">${stockBadge}</td>
-
                     <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
                     <td class="text-end pe-3">
                         <div class="btn-group btn-group-sm">
@@ -352,6 +416,10 @@
             document.getElementById('prodNPrice').value = p.nam_price;
             document.getElementById('prodStock').value = p.current_stock || 0;
             document.getElementById('prodReorder').value = p.reorder_level || 10;
+            
+            // Trigger calculation to autofill markup and margin!
+            document.getElementById('prodNPrice').dispatchEvent(new Event('input'));
+            
             productModal.show();
         }
 
@@ -361,6 +429,8 @@
             document.getElementById('prodId').value = '';
             document.getElementById('prodStock').value = 0;
             document.getElementById('prodReorder').value = 10;
+            document.getElementById('prodMarkup').value = '';
+            document.getElementById('prodMargin').value = '';
             productModal.show();
         }
 

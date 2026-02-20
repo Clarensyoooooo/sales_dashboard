@@ -632,24 +632,63 @@
         container.style.height = '400px'; 
 
         const ctx = document.getElementById('companyChart').getContext('2d');
+        
+        // 1. Fetch current target values
+        const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
+        const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
+
         if (charts.company) charts.company.destroy();
 
         charts.company = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => d.company),
-                datasets: [{ 
-                    label: 'Total Sales', 
-                    data: data.map(d => d.total_sales), 
-                    backgroundColor: colors.palette, 
-                    borderRadius: 3,
-                    barPercentage: 0.6
-                }]
+                datasets: [
+                    // Max Target Line
+                    { 
+                        type: 'line', 
+                        label: 'Max Target', 
+                        data: Array(data.length).fill(maxTarget), 
+                        borderColor: colors.success, 
+                        borderWidth: 2, 
+                        borderDash: [6, 4], 
+                        pointRadius: 0,
+                        datalabels: { display: false }, // Hide data labels for the line
+                        order: 0 
+                    },
+                    // Min Target Line
+                    { 
+                        type: 'line', 
+                        label: 'Min Target', 
+                        data: Array(data.length).fill(minTarget), 
+                        borderColor: colors.danger, 
+                        borderWidth: 2, 
+                        borderDash: [2, 2], 
+                        pointRadius: 0,
+                        datalabels: { display: false }, // Hide data labels for the line
+                        order: 1 
+                    },
+                    // Company Sales Bars
+                    { 
+                        type: 'bar',
+                        label: 'Total Sales', 
+                        data: data.map(d => d.total_sales), 
+                        backgroundColor: colors.palette, 
+                        borderRadius: 3,
+                        barPercentage: 0.6,
+                        order: 2
+                    }
+                ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 plugins: { 
-                    legend: { display: false },
+                    // 2. Enable legend to show what the lines mean
+                    legend: { 
+                        display: true, 
+                        position: 'bottom', 
+                        labels: { usePointStyle: true, boxWidth: 8, padding: 15 } 
+                    },
                     datalabels: {
                         color: '#444', anchor: 'end', align: 'end', offset: -5,
                         formatter: (val) => formatLarge(val),
