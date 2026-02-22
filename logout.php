@@ -1,5 +1,12 @@
 <?php
-session_start();
+// We must include config.php to have access to logAction() and the DB connection
+require_once 'config.php';
+
+// Log the action while the session is still active
+if(isset($_SESSION['user_id'])) {
+    logAction('System Logout', "User logged out.");
+}
+
 // Unset all session variables
 $_SESSION = array();
 

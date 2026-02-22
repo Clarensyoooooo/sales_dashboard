@@ -31,6 +31,14 @@ function isActive($page) {
     }
     .nav-link:hover { color: #2563eb !important; }
     
+    /* Logo Styling for Responsiveness */
+    .navbar-logo {
+        height: 35px; /* Default desktop size */
+        width: auto;
+        object-fit: contain;
+        transition: height 0.3s ease;
+    }
+    
     /* User Avatar */
     .avatar-circle {
         width: 32px; height: 32px; background-color: #f1f5f9; color: #475569;
@@ -48,13 +56,24 @@ function isActive($page) {
             margin-top: 10px;
         }
     }
+    
+    /* Extra Small Mobile Fixes for Logo */
+    @media (max-width: 576px) {
+        .navbar-logo {
+            height: 28px; /* Slightly smaller on mobile to save space */
+        }
+        .navbar-brand-text {
+            font-size: 1.1rem !important;
+        }
+    }
 </style>
 
 <nav class="navbar navbar-expand-lg navbar-light sticky-top py-2">
     <div class="container-fluid px-lg-4">
         
-        <a class="navbar-brand fw-bold text-primary" href="index.php" style="font-size: 1.25rem;">
-            <i class="fas fa-rocket me-2"></i>NAM Supply
+        <a class="navbar-brand d-flex align-items-center fw-bold text-primary" href="index.php" style="font-size: 1.25rem;">
+            <img src="YOUR_LOGO_HERE.png" alt="NAM Supply Logo" class="navbar-logo me-2" onerror="this.style.display='none'">
+            <span class="navbar-brand-text text-dark">NAM Supply</span>
         </a>
 
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -111,12 +130,14 @@ function isActive($page) {
 
                 <?php if ($role_id == 1): ?>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle <?php echo (isActive('users.php') || isActive('import.php')) ? 'text-primary fw-bold' : ''; ?>" 
+                        <a class="nav-link dropdown-toggle <?php echo (isActive('users.php') || isActive('roles.php') || isActive('import.php')) ? 'text-primary fw-bold' : ''; ?>" 
                            href="#" role="button" data-bs-toggle="dropdown">
                            <i class="fas fa-user-shield me-1 d-lg-none"></i> Admin
                         </a>
                         <ul class="dropdown-menu border-0 shadow-sm">
+                            <li><a class="dropdown-item" href="logs.php"><i class="fas fa-history me-2 text-muted"></i>System Logs</a></li>
                             <li><a class="dropdown-item" href="users.php"><i class="fas fa-users me-2 text-muted"></i>Manage Users</a></li>
+                            <li><a class="dropdown-item" href="roles.php"><i class="fas fa-user-tag me-2 text-muted"></i>Manage Roles</a></li>
                             <li><a class="dropdown-item" href="import.php"><i class="fas fa-file-import me-2 text-muted"></i>Import Data</a></li>
                         </ul>
                     </li>

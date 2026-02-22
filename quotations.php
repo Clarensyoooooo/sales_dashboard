@@ -11,7 +11,7 @@ if (isset($_POST['approve_id'])) {
     exit;
 }
 
-// --- 2. FINALIZE TO SALE (CONVERT & DEDUCT STOCK) ---
+// --- 2. FINALIZE TO SALE (CONVERT & DEDUCT STOCK WITH TRANSACTION) ---
 if (isset($_POST['convert_id'])) {
     $q_id = intval($_POST['convert_id']);
     $conn = getDBConnection();
@@ -25,21 +25,45 @@ if (isset($_POST['convert_id'])) {
         $stock = $check->get_result()->fetch_assoc();
         
         if ($stock && $stock['current_stock'] >= $q['quantity_requested']) {
-            $income = ($q['nam_unit_price'] * $q['quantity_requested']) - ($q['suppliers_price'] * $q['quantity_requested']);
-            $percent = ($q['nam_unit_price'] > 0) ? ($income / ($q['nam_unit_price'] * $q['quantity_requested'])) * 100 : 0;
             
-            $stmt = $conn->prepare("INSERT INTO sales (date, company, category, item, quantity_requested, suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount, income, income_percent, po_number, payment_term, remarks, date_delivered, due_date) VALUES (CURRENT_DATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)");
+            // --- START TRANSACTION ---
+            $conn->begin_transaction();
             
-            $total_actual = $q['suppliers_price'] * $q['quantity_requested'];
-            $total_nam = $q['nam_unit_price'] * $q['quantity_requested'];
-            
-            $stmt->bind_param("sssidddddssss", $q['company'], $q['category'], $q['item'], $q['quantity_requested'], $q['suppliers_price'], $total_actual, $q['nam_unit_price'], $total_nam, $income, $percent, $q['po_number'], $q['payment_term'], $q['remarks']);
-            
-            if ($stmt->execute()) {
-                $conn->query("UPDATE products SET current_stock = current_stock - {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
+            try {
+                $income = ($q['nam_unit_price'] * $q['quantity_requested']) - ($q['suppliers_price'] * $q['quantity_requested']);
+                $percent = ($q['nam_unit_price'] > 0) ? ($income / ($q['nam_unit_price'] * $q['quantity_requested'])) * 100 : 0;
+                
+                $stmt = $conn->prepare("INSERT INTO sales (date, company, category, item, quantity_requested, suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount, income, income_percent, po_number, payment_term, remarks, date_delivered, due_date) VALUES (CURRENT_DATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)");
+                
+                $total_actual = $q['suppliers_price'] * $q['quantity_requested'];
+                $total_nam = $q['nam_unit_price'] * $q['quantity_requested'];
+                
+                $stmt->bind_param("sssidddddssss", $q['company'], $q['category'], $q['item'], $q['quantity_requested'], $q['suppliers_price'], $total_actual, $q['nam_unit_price'], $total_nam, $income, $percent, $q['po_number'], $q['payment_term'], $q['remarks']);
+                
+                if (!$stmt->execute()) {
+                    throw new Exception("Failed to insert sale record.");
+                }
+                
+                // Update stock safely
+                $updateStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
+                $updateStock->bind_param("is", $q['quantity_requested'], $q['item']);
+                if (!$updateStock->execute()) {
+                    throw new Exception("Failed to deduct inventory.");
+                }
+
+                // Mark Quote as Converted
                 $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
+                
+                // COMMIT IF ALL SUCCEEDED
+                $conn->commit();
+                // ADD THIS LINE
+        logAction('Converted Quotation', "Converted quote for $q[company] to a sale (Item: $q[item])");
                 $msg = "success";
-            } else {
+                
+            } catch (Exception $e) {
+                // ROLLBACK IF ANYTHING FAILED
+                $conn->rollback();
+                error_log($e->getMessage());
                 $msg = "error_db";
             }
         } else {
@@ -210,6 +234,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                 <?php if(isset($_GET['msg'])): ?>
                     <?php if($_GET['msg']=='error_stock'): ?>
                         <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Cannot Finalize: <b>Insufficient Stock</b>.</div>
+                    <?php elseif($_GET['msg']=='error_db'): ?>
+                        <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> System Error: Failed to process transaction.</div>
                     <?php elseif($_GET['msg']=='approved'): ?>
                         <div class="alert alert-warning"><i class="fas fa-file-signature"></i> Quotation marked as Approved (Pending Signatures).</div>
                     <?php elseif($_GET['msg']=='success'): ?>
@@ -228,85 +254,109 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                     <?php
                     $conn = getDBConnection();
                     $grouped = [];
-                    $res = $conn->query("SELECT * FROM quotations ORDER BY company ASC, id DESC");
+                    // SMART GROUPING: Sort by Company, then newest Date first!
+                    $res = $conn->query("SELECT * FROM quotations ORDER BY company ASC, date DESC, id DESC");
+                    
                     while($row = $res->fetch_assoc()) {
-                        $grouped[$row['company']][] = $row;
+                        // Group first by Company, then sub-group by Quote Reference
+                        $ref = $row['quote_ref'] ? $row['quote_ref'] : 'Unknown Ref';
+                        $grouped[$row['company']][$ref][] = $row;
                     }
 
                     $i = 0;
-                    foreach($grouped as $company => $quotes):
+                    foreach($grouped as $company => $refs):
                         $i++;
+                        
+                        // Calculate total items and pending actions for this company across all dates
+                        $totalItems = 0;
                         $pendingCount = 0;
-                        foreach($quotes as $q) if($q['status'] != 'Converted') $pendingCount++;
+                        foreach($refs as $ref => $quotes) {
+                            foreach($quotes as $q) {
+                                $totalItems++;
+                                if($q['status'] != 'Converted') $pendingCount++;
+                            }
+                        }
                     ?>
                     <div class="accordion-item border-0 mb-3 shadow-sm rounded overflow-hidden company-group">
                         <h2 class="accordion-header" id="heading<?= $i ?>">
-                            <button class="accordion-button <?= $i==1?'':'collapsed' ?> bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>">
+                            <button class="accordion-button <?= $i==1?'':'collapsed' ?> bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>" aria-expanded="<?= $i==1?'true':'false' ?>" aria-controls="collapse<?= $i ?>">
                                 <div>
                                     <i class="fas fa-building text-primary me-2"></i> <strong class="company-name"><?= htmlspecialchars($company) ?></strong>
-                                    <span class="badge bg-secondary ms-2"><?= count($quotes) ?> Total Items</span>
+                                    <span class="badge bg-secondary ms-2"><?= $totalItems ?> Items</span>
                                     <?php if($pendingCount > 0): ?>
                                         <span class="badge bg-warning text-dark ms-1"><?= $pendingCount ?> Action Required</span>
                                     <?php endif; ?>
                                 </div>
                             </button>
                         </h2>
-                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>" data-bs-parent="#quotesAccordion">
-                            <div class="accordion-body p-0 table-responsive bg-white">
-                                <table class="table table-hover mb-0 align-middle">
-                                    <thead class="table-light text-muted small uppercase">
-                                        <tr>
-                                            <th>Ref & Date</th>
-                                            <th>Item Details</th>
-                                            <th class="text-end">Qty</th>
-                                            <th class="text-end">Unit / Total</th>
-                                            <th>Status</th>
-                                            <th class="text-end">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php foreach($quotes as $row): 
-                                            $status = $row['status'] ?: 'Pending';
-                                            $badge = 'secondary';
-                                            if ($status == 'Approved') $badge = 'warning text-dark';
-                                            if ($status == 'Converted') $badge = 'success';
-                                            $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
-                                        ?>
-                                        <tr class="item-row <?= $status=='Converted'?'opacity-50':'' ?>">
-                                            <td>
-                                                <small class="text-primary fw-bold d-block"><?= $row['quote_ref'] ?? 'N/A' ?></small>
-                                                <small class="text-muted"><?= $row['date'] ?></small>
-                                            </td>
-                                            <td><strong class="item-name"><?= $row['item'] ?></strong></td>
-                                            <td class="text-end"><?= $row['quantity_requested'] ?></td>
-                                            <td class="text-end">
-                                                <small class="text-muted d-block">₱<?= number_format($row['nam_unit_price'], 2) ?></small>
-                                                <strong class="text-dark">₱<?= number_format($totalAmt, 2) ?></strong>
-                                            </td>
-                                            <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
-                                            <td class="text-end">
-                                                <div class="d-flex justify-content-end gap-1">
-                                                    <?php if($status != 'Converted'): ?>
-                                                        <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
-                                                    <?php endif; ?>
+                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>">
+                            <div class="accordion-body p-0 bg-light">
+                                
+                                <?php foreach($refs as $ref => $quotes): 
+                                    $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); // Format the date nicely
+                                ?>
+                                <div class="p-3 border-bottom bg-white">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <h6 class="text-primary fw-bold mb-0">
+                                            <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
+                                        </h6>
+                                        <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
+                                    </div>
+                                    
+                                    <div class="table-responsive">
+                                        <table class="table table-hover table-sm mb-0 align-middle">
+                                            <thead class="table-light text-muted small uppercase">
+                                                <tr>
+                                                    <th width="35%">Item Details</th>
+                                                    <th class="text-end" width="10%">Qty</th>
+                                                    <th class="text-end" width="20%">Unit / Total</th>
+                                                    <th width="15%">Status</th>
+                                                    <th class="text-end" width="20%">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <?php foreach($quotes as $row): 
+                                                    $status = $row['status'] ?: 'Pending';
+                                                    $badge = 'secondary';
+                                                    if ($status == 'Approved') $badge = 'warning text-dark';
+                                                    if ($status == 'Converted') $badge = 'success';
+                                                    $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
+                                                ?>
+                                                <tr class="item-row <?= $status=='Converted'?'opacity-50 bg-light':'' ?>">
+                                                    <td><strong class="item-name text-dark"><?= $row['item'] ?></strong></td>
+                                                    <td class="text-end"><?= $row['quantity_requested'] ?></td>
+                                                    <td class="text-end">
+                                                        <small class="text-muted d-block">₱<?= number_format($row['nam_unit_price'], 2) ?></small>
+                                                        <strong class="text-dark">₱<?= number_format($totalAmt, 2) ?></strong>
+                                                    </td>
+                                                    <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
+                                                    <td class="text-end">
+                                                        <div class="d-flex justify-content-end gap-1">
+                                                            <?php if($status != 'Converted'): ?>
+                                                                <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
+                                                            <?php endif; ?>
 
-                                                    <?php if($status == 'Pending'): ?>
-                                                        <form method="POST" onsubmit="return confirm('Mark as Approved?');">
-                                                            <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
-                                                            <button class="btn btn-sm btn-warning fw-bold" title="Approve"><i class="fas fa-file-signature"></i> Approve</button>
-                                                        </form>
-                                                    <?php elseif($status == 'Approved'): ?>
-                                                        <form method="POST" onsubmit="return confirm('Finalize to Sale? This will DEDUCT stock and record the sale.');">
-                                                            <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
-                                                            <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i> Finalize</button>
-                                                        </form>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
+                                                            <?php if($status == 'Pending'): ?>
+                                                                <form method="POST" onsubmit="return confirm('Mark as Approved?');">
+                                                                    <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
+                                                                    <button class="btn btn-sm btn-warning fw-bold" title="Approve"><i class="fas fa-file-signature"></i></button>
+                                                                </form>
+                                                            <?php elseif($status == 'Approved'): ?>
+                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale? This will DEDUCT stock and record the sale.');">
+                                                                    <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
+                                                                    <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i> Convert</button>
+                                                                </form>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <?php endforeach; ?>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                                
                             </div>
                         </div>
                     </div>
