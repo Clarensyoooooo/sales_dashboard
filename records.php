@@ -361,7 +361,7 @@
         let filteredRecords = [];
         let currentPage = 1;
         const perPage = 50;
-        let poStatus = {};
+        let itemStatus = {}; // Tracks exactly how many of an item were delivered
 
         // Modal Instances
         let editModal, bulkDeliverModal;
@@ -378,21 +378,21 @@
 
         function showAlert(message, type = 'success') {
             const container = document.getElementById('alertContainer');
+            const alertId = 'alert-' + Date.now();
             container.innerHTML = `
-                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
                     ${message}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             `;
             setTimeout(() => {
-                const alert = bootstrap.Alert.getOrCreateInstance(container.querySelector('.alert'));
-                if(alert) alert.close();
+                const alertElement = document.getElementById(alertId);
+                if (alertElement) {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alertElement);
+                    bsAlert.close();
+                }
             }, 3000);
         }
-
-        const getGroupKey = (r) => {
-            return r.po_number ? (r.company + '|' + r.po_number) : (r.company + '|NO_PO|' + r.item + '|' + r.date);
-        };
 
         async function loadRecords() {
             try {
@@ -400,15 +400,21 @@
                 const data = await res.json();
                 allRecords = data.records;
                 
-                poStatus = {};
+                // Track quantities for partial delivery
+                itemStatus = {};
                 allRecords.forEach(r => {
-                    const key = getGroupKey(r);
-                    if(!poStatus[key]) poStatus[key] = { pending: 0, delivered: 0 };
+                    // Grouping key: Company + PO + Item Name ensures we match the exact item
+                    const key = r.company + '|' + (r.po_number || 'NO_PO') + '|' + r.item;
+                    
+                    if(!itemStatus[key]) {
+                        itemStatus[key] = { total: 0, delivered: 0 };
+                    }
+                    
+                    const qty = parseFloat(r.quantity_requested) || 0;
+                    itemStatus[key].total += qty;
                     
                     if(r.date_delivered && r.date_delivered !== '0000-00-00') {
-                        poStatus[key].delivered++;
-                    } else {
-                        poStatus[key].pending++;
+                        itemStatus[key].delivered += qty;
                     }
                 });
 
@@ -447,12 +453,12 @@
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
                 const isReserved = (r.is_reserved == 1);
                 
+                const key = r.company + '|' + (r.po_number || 'NO_PO') + '|' + r.item;
+                const stat = itemStatus[key];
+
                 let isPartial = false;
-                if (!isDelivered) {
-                    const key = getGroupKey(r);
-                    if (poStatus[key] && poStatus[key].delivered > 0) {
-                        isPartial = true;
-                    }
+                if (!isDelivered && stat && stat.delivered > 0) {
+                    isPartial = true;
                 }
 
                 if (status === 'pending' && isDelivered) return false;
@@ -521,21 +527,25 @@
             pageData.forEach(r => {
                 const tr = document.createElement('tr');
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
+                const isReserved = (r.is_reserved == 1);
+                
+                const key = r.company + '|' + (r.po_number || 'NO_PO') + '|' + r.item;
+                const stat = itemStatus[key];
 
                 let isPartial = false;
-                if (!isDelivered) {
-                    const key = getGroupKey(r);
-                    if (poStatus[key] && poStatus[key].delivered > 0) {
-                        isPartial = true;
-                    }
+                if (!isDelivered && stat && stat.delivered > 0) {
+                    isPartial = true;
                 }
 
                 let statusHtml = '';
                 if (isDelivered) {
                     statusHtml = `<span class="badge rounded-pill bg-success"><i class="fas fa-check me-1"></i>Delivered</span>`;
                 } else if (isPartial) {
-                    statusHtml = `<span class="badge rounded-pill bg-info text-dark"><i class="fas fa-truck-loading me-1"></i>Partially</span>`;
-                } else if (r.is_reserved == 1) {
+                    // NEW DYNAMIC PARTIAL BADGE
+                    statusHtml = `<span class="badge rounded-pill bg-info text-dark" title="${stat.delivered} out of ${stat.total} delivered">
+                                    <i class="fas fa-truck-loading me-1"></i>Partial (${stat.delivered}/${stat.total})
+                                  </span>`;
+                } else if (isReserved) {
                     statusHtml = `<span class="badge rounded-pill bg-danger"><i class="fas fa-bookmark me-1"></i>Reserved</span>`;
                 } else {
                     statusHtml = `<span class="badge rounded-pill bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>`;
@@ -573,8 +583,8 @@
                     <td class="col-truncate" title="${r.remarks || ''}">${r.remarks || ''}</td>
                     <td class="text-end bg-white" style="position:sticky; right:0;">
                         <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-warning" onclick="toggleReserve(${r.id}, ${r.is_reserved == 1 ? 0 : 1})" title="${r.is_reserved == 1 ? 'Remove Reservation' : 'Reserve Item'}">
-                                <i class="${r.is_reserved == 1 ? 'fas' : 'far'} fa-bookmark"></i>
+                            <button class="btn btn-outline-warning" onclick="toggleReserve(${r.id}, ${isReserved ? 0 : 1})" title="${isReserved ? 'Remove Reservation' : 'Reserve Item'}">
+                                <i class="${isReserved ? 'fas' : 'far'} fa-bookmark"></i>
                             </button>
                             <button class="btn btn-outline-primary" onclick="editRecord(${r.id})" title="Edit"><i class="fas fa-edit"></i></button>
                             <button class="btn btn-outline-danger" onclick="deleteRecord(${r.id})" title="Delete"><i class="fas fa-trash-alt"></i></button>
