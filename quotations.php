@@ -2,6 +2,37 @@
 require_once 'config.php'; 
 requireLogin(); 
 
+// --- 0. BATCH QUOTE CREATION (JSON API ENDPOINT) ---
+$input = json_decode(file_get_contents('php://input'), true);
+if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch') {
+    $conn = getDBConnection();
+    $conn->begin_transaction();
+    try {
+        $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        
+        $header = $input['header'];
+        $items = $input['items'];
+        
+        foreach($items as $item) {
+            $total = $item['quantity'] * $item['n_price'];
+            $cat = !empty($item['category']) ? $item['category'] : 'Uncategorized';
+            $stmt->bind_param("sssssidddsss", 
+                $header['date'], $header['quote_ref'], $header['company'], 
+                $cat, $item['item'], $item['quantity'], 
+                $item['s_price'], $item['n_price'], $total, 
+                $header['po'], $header['term'], $header['remarks']
+            );
+            $stmt->execute();
+        }
+        $conn->commit();
+        echo json_encode(['success' => true]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit; // Stop execution after handling the JSON POST
+}
+
 // --- 1. APPROVE QUOTE (WAITING FOR SIGNATURES) ---
 if (isset($_POST['approve_id'])) {
     $q_id = intval($_POST['approve_id']);
@@ -67,7 +98,6 @@ if (isset($_POST['convert_id'])) {
                 // COMMIT IF ALL SUCCEEDED
                 $conn->commit();
                 
-                // FIXED LINE BELOW: Added curly braces {} around array variables
                 logAction('Converted Quotation', "Converted quote for {$q['company']} to a sale (Item: {$q['item']})");
                 
                 $msg = "success";
@@ -83,19 +113,6 @@ if (isset($_POST['convert_id'])) {
         }
     }
     header("Location: quotations.php?msg=$msg");
-    exit;
-}
-
-// --- 4. CREATE QUOTE ---
-if (isset($_POST['action']) && $_POST['action'] == 'create_quote') {
-    $conn = getDBConnection();
-    $total = $_POST['n_price'] * $_POST['quantity'];
-    $category = !empty($_POST['category']) ? $_POST['category'] : 'Uncategorized';
-
-    $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("sssssidddsss", $_POST['date'], $_POST['quote_ref'], $_POST['company'], $category, $_POST['item'], $_POST['quantity'], $_POST['s_price'], $_POST['n_price'], $total, $_POST['po'], $_POST['term'], $_POST['remarks']);
-    $stmt->execute();
-    header("Location: quotations.php?msg=created");
     exit;
 }
 
@@ -139,6 +156,16 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             .print-input::-webkit-input-placeholder { color: transparent; }
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
+            /* Force precise margins for A4 printing */
+            @page { size: A4 portrait; margin: 15mm; }
+        }
+        
+        .formal-text { font-family: "Times New Roman", Times, serif; }
+        .formal-sans { font-family: Arial, Helvetica, sans-serif; }
+        
+        .form-section-header { 
+            font-size: 0.85rem; font-weight: 700; text-transform: uppercase; 
+            letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee;
         }
     </style>
 </head>
@@ -149,92 +176,94 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             
             <div class="col-lg-4">
                 <div class="card shadow-sm border-0 h-100">
-                    <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-file-invoice me-2"></i>New Quotation</div>
+                    <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-file-invoice me-2"></i>New Quotation Encoder</div>
                     <div class="card-body bg-light">
-                        <form method="POST" id="quoteForm">
-                            <input type="hidden" name="action" value="create_quote">
-                            <input type="hidden" name="category" id="categoryField">
+                        <form id="quoteForm" onsubmit="event.preventDefault(); addToQuote();">
+                            <input type="hidden" id="categoryField">
                             
-                            <div class="row g-2">
-                                <div class="col-6">
-                                    <label class="small text-muted fw-bold">Date</label>
-                                    <input type="date" name="date" id="date" class="form-control" value="<?= date('Y-m-d') ?>" required>
+                            <div class="mb-4">
+                                <div class="form-section-header text-primary border-primary">1. Quotation Details</div>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <label class="small text-muted fw-bold">Date</label>
+                                        <input type="date" id="date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="small text-muted fw-bold">Quote Reference</label>
+                                        <input type="text" id="quote_ref" class="form-control form-control-sm" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="small text-muted fw-bold">Client Company</label>
+                                        <input type="text" id="company" class="form-control form-control-sm" placeholder="Client Name" required>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="small text-muted fw-bold">PO Number (Optional)</label>
+                                        <input type="text" id="po" class="form-control form-control-sm" placeholder="PO #">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="small text-muted fw-bold">Payment Terms</label>
+                                        <input type="text" id="term" class="form-control form-control-sm" placeholder="e.g. 30 Days">
+                                    </div>
+                                    <div class="col-12">
+                                        <textarea id="remarks" class="form-control form-control-sm" placeholder="Remarks / Notes (Applies to entire quote)"></textarea>
+                                    </div>
                                 </div>
-                                <div class="col-6">
-                                    <label class="small text-muted fw-bold">Quote Reference</label>
-                                    <input type="text" name="quote_ref" id="quote_ref" class="form-control" required>
-                                </div>
-                                <div class="col-12">
-                                    <label class="small text-muted fw-bold">Client Company</label>
-                                    <input type="text" name="company" id="company" class="form-control" placeholder="Client Name" required>
-                                </div>
-                                <div class="col-12">
-                                    <label class="small text-muted fw-bold">Item</label>
-                                    <input type="text" name="item" id="itemInput" list="productList" class="form-control" placeholder="Search Item..." required autocomplete="off">
-                                    <datalist id="productList"></datalist>
-                                </div>
-                                <div class="col-6">
-                                    <label class="small text-muted fw-bold">Quantity</label>
-                                    <input type="number" name="quantity" id="quantity" class="form-control" placeholder="Qty" required value="1" min="1">
-                                </div>
-                                <div class="col-6">
-                                    <label class="small text-muted fw-bold">PO Number</label>
-                                    <input type="text" name="po" id="po" class="form-control" placeholder="Optional PO #">
-                                </div>
-                                
-                                <div class="col-12 mt-3">
-                                    <div class="border rounded p-2 bg-white border-secondary-subtle">
-                                        <div class="row g-2">
-                                            <div class="col-6">
-                                                <label class="small text-muted fw-bold">Supplier Cost</label>
-                                                <input type="number" step="0.01" name="s_price" id="s_price" class="form-control" placeholder="Cost" required>
-                                            </div>
-                                            <div class="col-6">
-                                                <label class="small text-primary fw-bold">Selling Price</label>
-                                                <input type="number" step="0.01" name="n_price" id="n_price" class="form-control border-primary" placeholder="Final Price" required>
-                                            </div>
-                                            <div class="col-6">
-                                                <label class="small text-muted fw-bold">Markup (%)</label>
-                                                <div class="input-group input-group-sm">
-                                                    <input type="number" step="0.01" id="markup_pct" class="form-control" placeholder="e.g. 35">
-                                                    <span class="input-group-text">%</span>
+                            </div>
+
+                            <div>
+                                <div class="form-section-header text-success border-success">2. Add Item</div>
+                                <div class="row g-2">
+                                    <div class="col-12">
+                                        <label class="small text-muted fw-bold">Item Description</label>
+                                        <input type="text" id="itemInput" list="productList" class="form-control form-control-sm" placeholder="Search Item..." autocomplete="off">
+                                        <datalist id="productList"></datalist>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="small text-muted fw-bold">Quantity</label>
+                                        <input type="number" id="quantity" class="form-control form-control-sm" placeholder="Qty" value="1" min="1">
+                                    </div>
+                                    
+                                    <div class="col-12 mt-3">
+                                        <div class="border rounded p-2 bg-white border-secondary-subtle">
+                                            <div class="row g-2">
+                                                <div class="col-6">
+                                                    <label class="small text-muted fw-bold">Supplier Cost</label>
+                                                    <input type="number" step="0.01" id="s_price" class="form-control form-control-sm" placeholder="Cost">
                                                 </div>
-                                            </div>
-                                            <div class="col-6">
-                                                <label class="small text-muted fw-bold">Margin (%)</label>
-                                                <div class="input-group input-group-sm">
-                                                    <input type="number" step="0.01" id="margin_pct" class="form-control" placeholder="Margin">
-                                                    <span class="input-group-text">%</span>
+                                                <div class="col-6">
+                                                    <label class="small text-primary fw-bold">Selling Price</label>
+                                                    <input type="number" step="0.01" id="n_price" class="form-control form-control-sm border-primary" placeholder="Final Price">
                                                 </div>
-                                            </div>
-                                            <div class="col-12 mt-2 pt-2 border-top">
-                                                <label class="small text-muted fw-bold">Total Quote Amount</label>
-                                                <div class="input-group">
-                                                    <span class="input-group-text bg-primary text-white border-primary">₱</span>
-                                                    <input type="text" id="total_display" class="form-control total-display" readonly value="0.00">
+                                                <div class="col-6">
+                                                    <label class="small text-muted fw-bold">Markup (%)</label>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" step="0.01" id="markup_pct" class="form-control">
+                                                        <span class="input-group-text">%</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <label class="small text-muted fw-bold">Margin (%)</label>
+                                                    <div class="input-group input-group-sm">
+                                                        <input type="number" step="0.01" id="margin_pct" class="form-control">
+                                                        <span class="input-group-text">%</span>
+                                                    </div>
+                                                </div>
+                                                <div class="col-12 mt-2 pt-2 border-top">
+                                                    <label class="small text-muted fw-bold">Item Total</label>
+                                                    <div class="input-group input-group-sm">
+                                                        <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                                        <input type="text" id="total_display" class="form-control fw-bold text-primary bg-light" readonly value="0.00">
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div class="col-12 mt-2">
-                                    <label class="small text-muted fw-bold">Payment Terms</label>
-                                    <input type="text" name="term" id="term" class="form-control" placeholder="e.g. 30 Days">
-                                </div>
-                                <div class="col-12">
-                                    <textarea name="remarks" id="remarks" class="form-control" placeholder="Remarks / Notes"></textarea>
-                                </div>
-
-                                <div class="col-6 mt-4">
-                                    <button type="button" class="btn btn-outline-dark w-100 fw-bold" onclick="showPreviewNew()">
-                                        <i class="fas fa-search me-1"></i> Preview Item
-                                    </button>
-                                </div>
-                                <div class="col-6 mt-4">
-                                    <button type="submit" class="btn btn-primary w-100 fw-bold">
-                                        <i class="fas fa-save me-1"></i> Save to List
-                                    </button>
+                                    <div class="col-12 mt-3">
+                                        <button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">
+                                            <i class="fas fa-plus-circle me-1"></i> Add to Quote
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -243,6 +272,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             </div>
 
             <div class="col-lg-8">
+                
                 <?php if(isset($_GET['msg'])): ?>
                     <?php if($_GET['msg']=='error_stock'): ?>
                         <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Cannot Finalize: <b>Insufficient Stock</b>.</div>
@@ -257,16 +287,45 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                     <?php elseif($_GET['msg']=='deleted'): ?>
                         <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list.</div>
                     <?php elseif($_GET['msg']=='created'): ?>
-                        <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created.</div>
+                        <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created Successfully.</div>
                     <?php endif; ?>
                 <?php endif; ?>
+
+                <div class="card shadow-sm border-0 mb-4" id="queueCard" style="display: none;">
+                    <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
+                        <div><i class="fas fa-shopping-cart me-2"></i>Current Quote Draft</div>
+                        <span class="badge bg-dark rounded-pill"><span id="queueCount">0</span> Items</span>
+                    </div>
+                    <div class="card-body p-0 table-responsive">
+                        <table class="table table-hover table-sm mb-0 align-middle">
+                            <thead class="table-light text-muted small uppercase">
+                                <tr>
+                                    <th class="ps-3">Item Description</th>
+                                    <th class="text-center">Qty</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">Total Amount</th>
+                                    <th class="text-end pe-3">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="queueBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer bg-light d-flex justify-content-end gap-2 p-3">
+                        <button class="btn btn-outline-dark fw-bold px-4" onclick="showPreviewNew()">
+                            <i class="fas fa-search me-1"></i> Preview Formal Document
+                        </button>
+                        <button class="btn btn-primary fw-bold px-4" onclick="saveQuoteBatch()">
+                            <i class="fas fa-save me-1"></i> Save Entire Quotation
+                        </button>
+                    </div>
+                </div>
                 
-                <div class="d-flex justify-content-between align-items-end mb-3">
+                <div class="d-flex justify-content-between align-items-end mb-3 mt-2">
                     <h5 class="fw-bold mb-0 text-dark"><i class="fas fa-layer-group me-2"></i>Grouped Quotations</h5>
-                    <input type="text" class="form-control form-control-sm w-25" placeholder="Search companies or items..." id="searchBox" onkeyup="filterAccordions(this)">
+                    <input type="text" class="form-control form-control-sm w-25 shadow-sm" placeholder="Search companies or items..." onkeyup="filterAccordions(this)">
                 </div>
 
-                <div class="accordion" id="quotesAccordion">
+                <div class="accordion shadow-sm" id="quotesAccordion">
                     <?php
                     $conn = getDBConnection();
                     $grouped = [];
@@ -292,9 +351,9 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                             }
                         }
                     ?>
-                    <div class="accordion-item border-0 mb-3 shadow-sm rounded overflow-hidden company-group">
+                    <div class="accordion-item border-0 border-bottom overflow-hidden company-group">
                         <h2 class="accordion-header" id="heading<?= $i ?>">
-                            <button class="accordion-button <?= $i==1?'':'collapsed' ?> bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>" aria-expanded="<?= $i==1?'true':'false' ?>" aria-controls="collapse<?= $i ?>">
+                            <button class="accordion-button <?= $i==1?'':'collapsed' ?> bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>">
                                 <div>
                                     <i class="fas fa-building text-primary me-2"></i> <strong class="company-name"><?= htmlspecialchars($company) ?></strong>
                                     <span class="badge bg-secondary ms-2"><?= $totalItems ?> Items</span>
@@ -304,14 +363,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                 </div>
                             </button>
                         </h2>
+                        
                         <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>" data-bs-parent="#quotesAccordion">
                             <div class="accordion-body p-0 bg-light">
                                 
                                 <?php foreach($refs as $ref => $quotes): 
                                     $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); // Format the date nicely
                                 ?>
-                                <div class="p-3 border-bottom bg-white">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="p-3 border-bottom bg-white shadow-sm mb-2 rounded mx-2 mt-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-3">
                                         <h6 class="text-primary fw-bold mb-0">
                                             <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
                                             <button class="btn btn-sm btn-outline-dark ms-3 shadow-sm fw-bold" 
@@ -325,13 +385,13 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     
                                     <div class="table-responsive">
                                         <table class="table table-hover table-sm mb-0 align-middle">
-                                            <thead class="table-light text-muted small uppercase">
+                                            <thead class="table-light text-muted small uppercase border-top border-bottom">
                                                 <tr>
-                                                    <th width="35%">Item Details</th>
-                                                    <th class="text-end" width="10%">Qty</th>
+                                                    <th width="35%" class="ps-2">Item Details</th>
+                                                    <th class="text-center" width="10%">Qty</th>
                                                     <th class="text-end" width="20%">Unit / Total</th>
-                                                    <th width="15%">Status</th>
-                                                    <th class="text-end" width="20%">Actions</th>
+                                                    <th width="15%" class="text-center">Status</th>
+                                                    <th class="text-end pe-2" width="20%">Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -343,33 +403,33 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                     $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
                                                 ?>
                                                 <tr class="item-row <?= $status=='Converted'?'opacity-50 bg-light':'' ?>">
-                                                    <td><strong class="item-name text-dark"><?= $row['item'] ?></strong></td>
-                                                    <td class="text-end"><?= $row['quantity_requested'] ?></td>
+                                                    <td class="ps-2"><strong class="item-name text-dark"><?= $row['item'] ?></strong></td>
+                                                    <td class="text-center"><?= $row['quantity_requested'] ?></td>
                                                     <td class="text-end">
                                                         <small class="text-muted d-block">₱<?= number_format($row['nam_unit_price'], 2) ?></small>
                                                         <strong class="text-dark">₱<?= number_format($totalAmt, 2) ?></strong>
                                                     </td>
-                                                    <td><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
-                                                    <td class="text-end">
+                                                    <td class="text-center"><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
+                                                    <td class="text-end pe-2">
                                                         <div class="d-flex justify-content-end gap-1">
                                                             <?php if($status != 'Converted'): ?>
                                                                 <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
                                                                 
-                                                                <form method="POST" onsubmit="return confirm('Are you sure you want to remove this item?');">
+                                                                <form method="POST" onsubmit="return confirm('Are you sure you want to remove this item?');" class="d-inline">
                                                                     <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
                                                                     <button class="btn btn-sm btn-outline-danger" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
                                                                 </form>
                                                             <?php endif; ?>
 
                                                             <?php if($status == 'Pending'): ?>
-                                                                <form method="POST" onsubmit="return confirm('Mark as Approved?');">
+                                                                <form method="POST" onsubmit="return confirm('Mark as Approved?');" class="d-inline">
                                                                     <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
                                                                     <button class="btn btn-sm btn-warning fw-bold" title="Approve"><i class="fas fa-file-signature"></i></button>
                                                                 </form>
                                                             <?php elseif($status == 'Approved'): ?>
-                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale? This will DEDUCT stock and record the sale.');">
+                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale? This will DEDUCT stock and record the sale.');" class="d-inline">
                                                                     <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i> Convert</button>
+                                                                    <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i></button>
                                                                 </form>
                                                             <?php endif; ?>
                                                         </div>
@@ -460,8 +520,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-secondary bg-opacity-10 p-4">
-                    <p class="text-center text-muted small mb-2"><i class="fas fa-info-circle me-1"></i> You can click the names at the bottom to edit them before printing.</p>
-                    <div id="receiptContent" class="preview-box p-5 mx-auto" style="max-width: 800px; min-height: 1000px;"></div>
+                    <p class="text-center text-muted small mb-2"><i class="fas fa-info-circle me-1"></i> You can click the names, addresses, and units in the document below to edit them before printing.</p>
+                    <div id="receiptContent" class="preview-box p-4 p-md-5 mx-auto" style="max-width: 850px; min-height: 1000px;"></div>
                 </div>
                 <div class="modal-footer bg-white">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -476,8 +536,10 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     let productMap = new Map();
+    let quoteQueue = []; // Holds items for the current batch
 
     document.addEventListener("DOMContentLoaded", () => {
+        // Generate random Quote Ref on load
         const rand = Math.floor(1000 + Math.random() * 9000);
         const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
         document.getElementById('quote_ref').value = `QTE-${dateStr}-${rand}`;
@@ -512,7 +574,124 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         }
     });
 
-    // --- PRICING CALCULATOR LOGIC (Enhanced) ---
+    // --- BATCH QUEUE LOGIC ---
+    function addToQuote() {
+        const item = document.getElementById('itemInput').value;
+        const qty = parseFloat(document.getElementById('quantity').value) || 0;
+        const sPrice = parseFloat(document.getElementById('s_price').value) || 0;
+        const nPrice = parseFloat(document.getElementById('n_price').value) || 0;
+        const category = document.getElementById('categoryField').value || 'Uncategorized';
+
+        if (!item || qty <= 0 || nPrice <= 0) {
+            alert("Please enter a valid item, quantity, and selling price before adding.");
+            return;
+        }
+
+        quoteQueue.push({
+            item: item,
+            quantity: qty,
+            s_price: sPrice,
+            n_price: nPrice,
+            category: category
+        });
+
+        // Reset Item Fields Only (Keep Header Info intact)
+        document.getElementById('itemInput').value = '';
+        document.getElementById('quantity').value = '1';
+        document.getElementById('s_price').value = '';
+        document.getElementById('n_price').value = '';
+        document.getElementById('total_display').value = '0.00';
+        document.getElementById('markup_pct').value = '';
+        document.getElementById('margin_pct').value = '';
+        document.getElementById('categoryField').value = '';
+        document.getElementById('itemInput').focus();
+
+        renderQueue();
+    }
+
+    function renderQueue() {
+        const card = document.getElementById('queueCard');
+        const body = document.getElementById('queueBody');
+        const count = document.getElementById('queueCount');
+
+        if (quoteQueue.length === 0) {
+            card.style.display = 'none';
+            return;
+        }
+
+        card.style.display = 'block';
+        count.textContent = quoteQueue.length;
+
+        let html = '';
+        quoteQueue.forEach((q, idx) => {
+            const total = q.quantity * q.n_price;
+            html += `
+                <tr>
+                    <td class="ps-3 fw-bold">${q.item}</td>
+                    <td class="text-center">${q.quantity}</td>
+                    <td class="text-end">₱${q.n_price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end text-primary fw-bold">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end pe-3">
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromQueue(${idx})" title="Remove"><i class="fas fa-times"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+        body.innerHTML = html;
+    }
+
+    function removeFromQueue(idx) {
+        quoteQueue.splice(idx, 1);
+        renderQueue();
+    }
+
+    async function saveQuoteBatch() {
+        if (quoteQueue.length === 0) return;
+
+        // Validation for header
+        const date = document.getElementById('date').value;
+        const ref = document.getElementById('quote_ref').value;
+        const company = document.getElementById('company').value;
+
+        if (!date || !ref || !company) {
+            alert("Please ensure the Date, Quote Reference, and Client Company are filled in.");
+            return;
+        }
+
+        if(!confirm(`Are you sure you want to save this quotation with ${quoteQueue.length} items?`)) return;
+
+        const payload = {
+            action: 'create_quote_batch',
+            header: {
+                date: date,
+                quote_ref: ref,
+                company: company,
+                po: document.getElementById('po').value,
+                term: document.getElementById('term').value,
+                remarks: document.getElementById('remarks').value
+            },
+            items: quoteQueue
+        };
+
+        try {
+            const res = await fetch('quotations.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                window.location.href = 'quotations.php?msg=created';
+            } else {
+                alert("Error saving quotation: " + data.message);
+            }
+        } catch (e) {
+            alert("Network Error: Could not reach the server.");
+        }
+    }
+
+    // --- PRICING CALCULATOR LOGIC ---
     function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId, qtyId, totalId) {
         const sPrice = document.getElementById(sPriceId);
         const nPrice = document.getElementById(nPriceId);
@@ -576,7 +755,6 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         document.getElementById('edit_s_price').value = parseFloat(row.suppliers_price).toFixed(2);
         document.getElementById('edit_n_price').value = parseFloat(row.nam_unit_price).toFixed(2);
         
-        // Trigger calculation to fill markup/margin fields AND total
         document.getElementById('edit_n_price').dispatchEvent(new Event('input'));
         
         new bootstrap.Modal(document.getElementById('editModal')).show();
@@ -585,100 +763,217 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     // --- FORMAL DOCUMENT PRINT RENDERING ---
     function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
         const html = `
-            <div id="printArea">
-                <div class="text-center mb-5 pb-3 border-bottom border-dark border-2">
-                    <h2 class="fw-bold mb-0" style="letter-spacing: 2px;">NAM SUPPLY</h2>
-                    <p class="mb-0 text-muted">Business Address / Contact Details Here</p>
-                    <h4 class="mt-4 fw-bold text-uppercase">Formal Quotation</h4>
-                </div>
-
+            <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
+                
                 <div class="row mb-4">
                     <div class="col-8">
-                        <table class="table table-sm table-borderless mb-0">
-                            <tr><th width="100" class="text-muted">To:</th><td><input type="text" class="print-input w-100 fw-bold fs-6" value="${client}"></td></tr>
-                            <tr><th class="text-muted">Date:</th><td class="fw-bold">${date}</td></tr>
-                            ${po ? `<tr><th class="text-muted">PO #:</th><td>${po}</td></tr>` : ''}
-                            ${term ? `<tr><th class="text-muted">Terms:</th><td>${term}</td></tr>` : ''}
-                        </table>
+                        <h2 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px;">NAM BUILDERS AND SUPPLY CORP.</h2>
+                        <p class="mb-0" style="font-size: 0.85rem;">RNA BUILDING, BRGY SANTIAGO</p>
+                        <p class="mb-0" style="font-size: 0.85rem;">MALVAR, BATANGAS, PHILIPPINES, 4233</p>
+                        <p class="mb-0" style="font-size: 0.85rem;">CONTACT NO: 0963-732-6844 / 0917-834-8811 / 0901-556-352</p>
+                        <p class="mb-0" style="font-size: 0.85rem;">EMAIL: <input type="text" class="print-input" style="width: 250px;" placeholder="Enter email"></p>
                     </div>
                     <div class="col-4 text-end">
-                        <table class="table table-sm table-borderless mb-0 text-end">
-                            <tr><th class="text-muted">Quote Ref:</th><td class="fw-bold">${ref}</td></tr>
-                        </table>
+                        <h1 class="fw-bolder text-uppercase mt-2" style="color: #475569; font-size: 32px; letter-spacing: 2px;">QUOTATION</h1>
                     </div>
                 </div>
 
-                <table class="table table-bordered border-dark mb-4">
-                    <thead class="table-light border-dark text-center">
+                <hr class="border-dark border-2 opacity-100 mb-4">
+
+                <div class="mb-4">
+                    <h6 class="fw-bold mb-3 text-uppercase" style="font-size: 0.95rem;">CUSTOMER DETAIL</h6>
+                    <div class="row" style="font-size: 0.85rem;">
+                        <div class="col-8">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr>
+                                    <th width="150" class="p-0 pb-1">COMPANY NAME:</th>
+                                    <td class="p-0 pb-1 fw-bold"><input type="text" class="print-input w-100 fw-bold" value="${client}"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">COMPANY ADDRESS:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Address]"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">CONTACT PERSON:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Contact Person]"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">CONTACT NUMBER:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Contact Number]"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">EMAIL ADDRESS:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Email]"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1 mt-2 d-block">TERMS:</th>
+                                    <td class="p-0 pb-1 mt-2"><input type="text" class="print-input w-100" value="${term}"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">TRANSPORT:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Transport]"></td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-4">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr>
+                                    <th width="130" class="p-0 pb-1">QUOTATION NO:</th>
+                                    <td class="p-0 pb-1 fw-bold">${ref}</td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">QUOTATION DATE:</th>
+                                    <td class="p-0 pb-1 fw-bold">${date}</td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1 mt-5 d-block">TRANSPORT ID:</th>
+                                    <td class="p-0 pb-1 mt-5"><input type="text" class="print-input w-100" placeholder="[Transport ID]"></td>
+                                </tr>
+                                <tr>
+                                    <th class="p-0 pb-1">VEHICLE NO:</th>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Vehicle No]"></td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <table class="table table-bordered border-dark mb-4" style="font-size: 0.85rem;">
+                    <thead class="text-center align-middle bg-light fw-bold" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                         <tr>
-                            <th class="py-2 text-uppercase">Description</th>
-                            <th width="12%" class="py-2 text-uppercase">Qty</th>
-                            <th width="20%" class="py-2 text-uppercase">Unit Price</th>
-                            <th width="25%" class="py-2 text-uppercase">Amount</th>
+                            <th width="8%" class="py-2">S/N</th>
+                            <th width="40%" class="py-2">DESCRIPTION</th>
+                            <th width="12%" class="py-2">UOM</th>
+                            <th width="10%" class="py-2">QUANTITY</th>
+                            <th width="15%" class="py-2">UNIT PRICE</th>
+                            <th width="15%" class="py-2">TOTAL AMOUNT</th>
                         </tr>
                     </thead>
-                    <tbody class="border-dark">
+                    <tbody class="border-dark align-middle">
                         ${tbodyHtml}
                     </tbody>
                     <tfoot class="border-dark">
                         <tr>
-                            <th colspan="3" class="text-end py-3">GRAND TOTAL:</th>
-                            <th class="text-end py-3 fs-5 text-dark fw-bold">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</th>
+                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">SUBTOTAL</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VAT:</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0"><input type="text" class="print-input text-end w-100 fw-bold m-0 p-0" value="0.00"></td>
+                        </tr>
+                        <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                            <td colspan="5" class="text-end py-2 fw-bolder pe-3 fs-6">TOTAL AMOUNT</td>
+                            <td class="text-end py-2 fs-6 fw-bolder">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
                 </table>
 
-                ${remarks ? `<div class="mt-4 mb-5 p-3 border border-dark rounded bg-light"><strong class="d-block mb-2 text-uppercase text-muted small">Remarks / Notes:</strong>${remarks.replace(/\\n/g, '<br>')}</div>` : '<div class="mb-5 pb-5"></div>'}
+                <div class="row" style="font-size: 0.75rem;">
+                    <div class="col-7 pe-4">
+                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">PAYMENT DETAILS</h6>
+                        <table class="table table-sm table-borderless mb-3 p-0">
+                            <tr><th width="120" class="p-0">BANK NAME</th><td class="p-0">: BANK OF COMMERCE</td></tr>
+                            <tr><th class="p-0">ACCOUNT NAME</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
+                            <tr><th class="p-0">ACCOUNT NO.</th><td class="p-0">: 106-20-000556-1</td></tr>
+                        </table>
 
-                <div class="row mt-5 pt-5">
-                    <div class="col-5">
-                        <p class="mb-5 text-muted small text-uppercase">Prepared By:</p>
-                        <input type="text" class="print-input text-center w-100 fw-bold fs-6 mb-1" value="NAM Supply Representative">
-                        <div class="border-top border-dark text-center small pt-1 text-muted">Signature over printed name</div>
+                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">CHECK DETAILS</h6>
+                        <table class="table table-sm table-borderless mb-3 p-0">
+                            <tr><th width="120" class="p-0">Name</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
+                        </table>
+
+                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">TERMS AND CONDITION</h6>
+                        
+                        <p class="fw-bold mb-0 text-decoration-underline mt-2">Payment Terms</p>
+                        <ul class="mb-2 ps-3">
+                            <li>If there are any price change NAM BUILDERS AND SUPPLY CORP will resend a quotation prior to process an order.</li>
+                            <li>Check or Cash Payment must be collected by NAM BUILDERS AND SUPPLY CORP.</li>
+                            <li>Only items stated in this quotation shall be stated in the PURCHASE ORDER.</li>
+                        </ul>
+
+                        <p class="fw-bold mb-0 text-decoration-underline">Delivery Terms</p>
+                        <ul class="mb-2 ps-3">
+                            <li>Client shall provide weekly projected requirements and 4-6 days lead time for planning purpose. Any modification in the daily should be communicated twenty-four (24) hours before the schedule.</li>
+                            <li>Client Scheduled delivery on Monday-Friday.</li>
+                            <li>Client Authorized Representative must be present at the company to acknowledge the products and quantity described on the Delivery Receiving.</li>
+                        </ul>
+
+                        <p class="fw-bold mb-0 text-decoration-underline">Quality Terms</p>
+                        <ul class="mb-2 ps-3">
+                            <li>Client Authorized Representative must signed the Receiving Inspection Stamp.</li>
+                            <li>Items reported as damaged or wrong items must be replaced within 7 days of the reported date (Receiving Inspection Stamp), provided all eligibility criteria are met.</li>
+                        </ul>
+
+                        <p class="fw-bold mb-0 text-decoration-underline">Validity</p>
+                        <ul class="mb-4 ps-3">
+                            <li>1 month validity effective receipt of this quotation.</li>
+                        </ul>
+                        
+                        ${remarks ? `<div class="p-2 mt-2 border border-dark rounded bg-light"><strong class="d-block mb-1">Additional Remarks:</strong>${remarks.replace(/\\n/g, '<br>')}</div>` : ''}
                     </div>
-                    <div class="col-2"></div>
-                    <div class="col-5">
-                        <p class="mb-5 text-muted small text-uppercase">Conforme:</p>
-                        <input type="text" class="print-input text-center w-100 fw-bold fs-6 mb-1" placeholder="Type Client Name Here">
-                        <div class="border-top border-dark text-center small pt-1 text-muted">Signature over printed name</div>
+
+                    <div class="col-5 border-start border-dark ps-4">
+                        <p class="mb-3 text-justify">Thank you for giving us the opportunity to do business with you.</p>
+                        <p class="mb-5 text-justify">If the terms and conditions in this quotation are acceptable, please indicate your acceptance of them by signing in the space provided below and returning signed counterpart of this proposal to NAM BUILDERS AND SUPPLY CORP. Upon NAM BUILDERS AND SUPPLY CORP received of this quotation, the terms and conditions contained herein shall constitute a binding agreement between your company and NAM BUILDERS AND SUPPLY CORP, effective as of the date NAM BUILDERS AND SUPPLY CORP received.</p>
+                        
+                        <div class="mt-5 pt-3">
+                            <p class="mb-0">Sincerely,</p>
+                            <input type="text" class="print-input w-100 fw-bold fs-6 mb-0 mt-3" value="ALLYSON ASHLEY AGUILERA">
+                            <div class="small">Sales and Technical Officer</div>
+                        </div>
+
+                        <div class="mt-5 pt-3">
+                            <p class="mb-0">Conforme:</p>
+                            <input type="text" class="print-input w-100 fw-bold fs-6 mb-0 mt-3" placeholder="[Client Signature / Name]">
+                            <div class="small">Signature over printed name</div>
+                        </div>
                     </div>
                 </div>
+
             </div>
         `;
         document.getElementById('receiptContent').innerHTML = html;
         new bootstrap.Modal(document.getElementById('previewModal')).show();
     }
 
-    // Preview Single Item from Form
+    // Preview Multiple Items from Queue (Before Saving)
     function showPreviewNew() {
-        const form = document.getElementById('quoteForm');
-        if (!form.checkValidity()) { form.reportValidity(); return; }
+        if (quoteQueue.length === 0) {
+            alert("Please add at least one item to the Quote Draft before previewing.");
+            return;
+        }
 
         const date = document.getElementById('date').value;
         const ref = document.getElementById('quote_ref').value;
         const client = document.getElementById('company').value;
-        const item = document.getElementById('itemInput').value;
-        const qty = document.getElementById('quantity').value;
-        const price = parseFloat(document.getElementById('n_price').value) || 0;
         const po = document.getElementById('po').value;
         const term = document.getElementById('term').value;
         const remarks = document.getElementById('remarks').value;
         
-        const total = (qty * price);
-        
-        const tbodyHtml = `
-            <tr>
-                <td class="py-2">${item}</td>
-                <td class="text-center py-2">${qty}</td>
-                <td class="text-end py-2">₱${price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                <td class="text-end fw-bold py-2">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-            </tr>
-        `;
+        let tbodyHtml = '';
+        let grandTotal = 0;
 
-        renderFormalPrint(date, ref, client, tbodyHtml, total, po, term, remarks);
+        quoteQueue.forEach((q, index) => {
+            let total = q.quantity * q.n_price;
+            grandTotal += total;
+            let sn = String(index + 1).padStart(3, '0');
+            
+            tbodyHtml += `
+                <tr>
+                    <td class="text-center py-2">${sn}</td>
+                    <td class="py-2 fw-bold">${q.item}</td>
+                    <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-2">${q.quantity}</td>
+                    <td class="text-end py-2">${parseFloat(q.n_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end py-2">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
+
+        renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks);
     }
 
-    // Print Multiple Items from Group
+    // Print Multiple Items from Saved Group
     function printGroupedQuote(quotes, company, ref) {
         let tbody = '';
         let grandTotal = 0;
@@ -687,15 +982,19 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         let term = quotes[0].payment_term || '';
         let remarks = quotes[0].remarks || '';
 
-        quotes.forEach(q => {
+        quotes.forEach((q, index) => {
             let total = q.quantity_requested * q.nam_unit_price;
             grandTotal += total;
+            let sn = String(index + 1).padStart(3, '0');
+            
             tbody += `
                 <tr>
-                    <td class="py-2">${q.item}</td>
+                    <td class="text-center py-2">${sn}</td>
+                    <td class="py-2 fw-bold">${q.item}</td>
+                    <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
                     <td class="text-center py-2">${q.quantity_requested}</td>
-                    <td class="text-end py-2">₱${parseFloat(q.nam_unit_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end fw-bold py-2">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end py-2">${parseFloat(q.nam_unit_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end py-2">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                 </tr>
             `;
         });
@@ -703,30 +1002,19 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         renderFormalPrint(date, ref, company, tbody, grandTotal, po, term, remarks);
     }
 
-    // Execute Print Logic (Isolates print area to prevent modal cropping bugs)
     function executePrint() {
-        // Copy the content from the modal box to the hidden print container attached to the body
         const content = document.getElementById('printArea').outerHTML;
         document.getElementById('printContainer').innerHTML = content;
-        
-        // Trigger browser print
         window.print();
     }
     
-    // --- SEARCH ACCORDIONS ---
     function filterAccordions(input) {
         const filter = input.value.toLowerCase();
         const groups = document.querySelectorAll('.company-group');
-        
         groups.forEach(group => {
             const compName = group.querySelector('.company-name').innerText.toLowerCase();
             const itemsText = group.querySelector('tbody').innerText.toLowerCase();
-            
-            if (compName.includes(filter) || itemsText.includes(filter)) {
-                group.style.display = '';
-            } else {
-                group.style.display = 'none';
-            }
+            group.style.display = (compName.includes(filter) || itemsText.includes(filter)) ? '' : 'none';
         });
     }
     </script>
