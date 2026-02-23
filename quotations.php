@@ -11,7 +11,17 @@ if (isset($_POST['approve_id'])) {
     exit;
 }
 
-// --- 2. FINALIZE TO SALE (CONVERT & DEDUCT STOCK WITH TRANSACTION) ---
+// --- 2. DELETE QUOTE ITEM ---
+if (isset($_POST['delete_id'])) {
+    $d_id = intval($_POST['delete_id']);
+    $conn = getDBConnection();
+    // Only allow deleting if not converted yet to maintain data integrity
+    $conn->query("DELETE FROM quotations WHERE id = $d_id AND status != 'Converted'");
+    header("Location: quotations.php?msg=deleted");
+    exit;
+}
+
+// --- 3. FINALIZE TO SALE (CONVERT & DEDUCT STOCK WITH TRANSACTION) ---
 if (isset($_POST['convert_id'])) {
     $q_id = intval($_POST['convert_id']);
     $conn = getDBConnection();
@@ -56,8 +66,10 @@ if (isset($_POST['convert_id'])) {
                 
                 // COMMIT IF ALL SUCCEEDED
                 $conn->commit();
-                // ADD THIS LINE
-        logAction('Converted Quotation', "Converted quote for $q[company] to a sale (Item: $q[item])");
+                
+                // FIXED LINE BELOW: Added curly braces {} around array variables
+                logAction('Converted Quotation', "Converted quote for {$q['company']} to a sale (Item: {$q['item']})");
+                
                 $msg = "success";
                 
             } catch (Exception $e) {
@@ -74,7 +86,7 @@ if (isset($_POST['convert_id'])) {
     exit;
 }
 
-// --- 3. CREATE QUOTE ---
+// --- 4. CREATE QUOTE ---
 if (isset($_POST['action']) && $_POST['action'] == 'create_quote') {
     $conn = getDBConnection();
     $total = $_POST['n_price'] * $_POST['quantity'];
@@ -87,7 +99,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'create_quote') {
     exit;
 }
 
-// --- 4. EDIT QUOTE ---
+// --- 5. EDIT QUOTE ---
 if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $conn = getDBConnection();
     $id = intval($_POST['edit_id']);
@@ -111,10 +123,23 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        .preview-box { border: 2px dashed #ccc; padding: 20px; background: #fff; font-family: 'Courier New', Courier, monospace; }
-        .receipt-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px; }
-        .receipt-total { border-top: 1px solid #000; margin-top: 10px; padding-top: 5px; text-align: right; font-weight: bold; }
         .accordion-button:not(.collapsed) { background-color: #e0e7ff; color: #4338ca; font-weight: bold; }
+        .total-display { font-size: 1.1rem; font-weight: bold; color: #0d6efd; background: #e9ecef; }
+        
+        /* Interactive inputs for formal print document */
+        .print-input { border: none; border-bottom: 1px dashed #aaa; background: transparent; padding: 2px 5px; outline: none; transition: border 0.3s; }
+        .print-input:focus { border-bottom: 1px solid #0d6efd; }
+        .preview-box { border: 1px solid #dee2e6; background: #fff; padding: 0; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
+
+        /* Print Specific CSS */
+        @media print {
+            body > :not(#printContainer) { display: none !important; }
+            #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
+            .print-input { border-bottom: none !important; }
+            .print-input::-webkit-input-placeholder { color: transparent; }
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -123,7 +148,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         <div class="row g-4">
             
             <div class="col-lg-4">
-                <div class="card shadow-sm border-0">
+                <div class="card shadow-sm border-0 h-100">
                     <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-file-invoice me-2"></i>New Quotation</div>
                     <div class="card-body bg-light">
                         <form method="POST" id="quoteForm">
@@ -182,6 +207,13 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                     <span class="input-group-text">%</span>
                                                 </div>
                                             </div>
+                                            <div class="col-12 mt-2 pt-2 border-top">
+                                                <label class="small text-muted fw-bold">Total Quote Amount</label>
+                                                <div class="input-group">
+                                                    <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                                    <input type="text" id="total_display" class="form-control total-display" readonly value="0.00">
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -193,35 +225,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                 <div class="col-12">
                                     <textarea name="remarks" id="remarks" class="form-control" placeholder="Remarks / Notes"></textarea>
                                 </div>
-                                
-                                <div class="col-12 mt-2">
-                                    <div class="border rounded p-2 bg-white border-secondary-subtle">
-                                        <label class="small text-muted fw-bold d-block mb-1"><i class="fas fa-eye me-1"></i> Client Print Options</label>
-                                        <div class="d-flex flex-wrap gap-3">
-                                            <div class="form-check form-switch">
-                                                <input class="form-check-input" type="checkbox" id="showPo" checked>
-                                                <label class="form-check-label small">Show PO</label>
-                                            </div>
-                                            <div class="form-check form-switch">
-                                                <input class="form-check-input" type="checkbox" id="showTerms" checked>
-                                                <label class="form-check-label small">Show Terms</label>
-                                            </div>
-                                            <div class="form-check form-switch">
-                                                <input class="form-check-input" type="checkbox" id="showRemarks" checked>
-                                                <label class="form-check-label small">Show Remarks</label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
 
-                                <div class="col-6 mt-3">
-                                    <button type="button" class="btn btn-outline-dark w-100 fw-bold" onclick="showPreview()">
-                                        <i class="fas fa-search me-1"></i> Preview
+                                <div class="col-6 mt-4">
+                                    <button type="button" class="btn btn-outline-dark w-100 fw-bold" onclick="showPreviewNew()">
+                                        <i class="fas fa-search me-1"></i> Preview Item
                                     </button>
                                 </div>
-                                <div class="col-6 mt-3">
+                                <div class="col-6 mt-4">
                                     <button type="submit" class="btn btn-primary w-100 fw-bold">
-                                        <i class="fas fa-save me-1"></i> Save
+                                        <i class="fas fa-save me-1"></i> Save to List
                                     </button>
                                 </div>
                             </div>
@@ -242,6 +254,10 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                         <div class="alert alert-success"><i class="fas fa-check-circle"></i> Sale Finalized and Stock Deducted!</div>
                     <?php elseif($_GET['msg']=='edited'): ?>
                         <div class="alert alert-info"><i class="fas fa-edit"></i> Quotation successfully updated.</div>
+                    <?php elseif($_GET['msg']=='deleted'): ?>
+                        <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list.</div>
+                    <?php elseif($_GET['msg']=='created'): ?>
+                        <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created.</div>
                     <?php endif; ?>
                 <?php endif; ?>
                 
@@ -267,7 +283,6 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                     foreach($grouped as $company => $refs):
                         $i++;
                         
-                        // Calculate total items and pending actions for this company across all dates
                         $totalItems = 0;
                         $pendingCount = 0;
                         foreach($refs as $ref => $quotes) {
@@ -289,7 +304,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                 </div>
                             </button>
                         </h2>
-                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>">
+                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>" data-bs-parent="#quotesAccordion">
                             <div class="accordion-body p-0 bg-light">
                                 
                                 <?php foreach($refs as $ref => $quotes): 
@@ -299,6 +314,11 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                         <h6 class="text-primary fw-bold mb-0">
                                             <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
+                                            <button class="btn btn-sm btn-outline-dark ms-3 shadow-sm fw-bold" 
+                                                    onclick='printGroupedQuote(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>)' 
+                                                    title="Print Formal Document">
+                                                <i class="fas fa-print me-1"></i> Print Formal Quote
+                                            </button>
                                         </h6>
                                         <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
                                     </div>
@@ -334,6 +354,11 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                         <div class="d-flex justify-content-end gap-1">
                                                             <?php if($status != 'Converted'): ?>
                                                                 <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
+                                                                
+                                                                <form method="POST" onsubmit="return confirm('Are you sure you want to remove this item?');">
+                                                                    <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
+                                                                    <button class="btn btn-sm btn-outline-danger" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
+                                                                </form>
                                                             <?php endif; ?>
 
                                                             <?php if($status == 'Pending'): ?>
@@ -409,6 +434,13 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     <span class="input-group-text">%</span>
                                 </div>
                             </div>
+                            <div class="col-12 mt-2 pt-2 border-top">
+                                <label class="small text-muted fw-bold">New Total Amount</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                    <input type="text" id="edit_total_display" class="form-control total-display" readonly value="0.00">
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="modal-footer bg-white">
@@ -421,22 +453,25 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     </div>
 
     <div class="modal fade" id="previewModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold">Client Quotation Print</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-print me-2"></i>Formal Document Preview</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body bg-light">
-                    <div id="receiptContent" class="preview-box shadow-sm"></div>
+                <div class="modal-body bg-secondary bg-opacity-10 p-4">
+                    <p class="text-center text-muted small mb-2"><i class="fas fa-info-circle me-1"></i> You can click the names at the bottom to edit them before printing.</p>
+                    <div id="receiptContent" class="preview-box p-5 mx-auto" style="max-width: 800px; min-height: 1000px;"></div>
                 </div>
-                <div class="modal-footer">
+                <div class="modal-footer bg-white">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="window.print()"><i class="fas fa-print me-1"></i> Print</button>
+                    <button type="button" class="btn btn-primary px-4 fw-bold" onclick="executePrint()"><i class="fas fa-print me-2"></i> Print Document</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <div id="printContainer" class="d-none d-print-block"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -461,8 +496,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             });
 
         // Initialize Price Calculators for both forms
-        attachPriceCalculators('s_price', 'n_price', 'markup_pct', 'margin_pct');
-        attachPriceCalculators('edit_s_price', 'edit_n_price', 'edit_markup_pct', 'edit_margin_pct');
+        attachPriceCalculators('s_price', 'n_price', 'markup_pct', 'margin_pct', 'quantity', 'total_display');
+        attachPriceCalculators('edit_s_price', 'edit_n_price', 'edit_markup_pct', 'edit_margin_pct', 'edit_quantity', 'edit_total_display');
     });
 
     // Handle Item Selection Auto-fill
@@ -477,12 +512,20 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         }
     });
 
-    // --- PRICING CALCULATOR LOGIC ---
-    function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId) {
+    // --- PRICING CALCULATOR LOGIC (Enhanced) ---
+    function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId, qtyId, totalId) {
         const sPrice = document.getElementById(sPriceId);
         const nPrice = document.getElementById(nPriceId);
         const markup = document.getElementById(markupId);
         const margin = document.getElementById(marginId);
+        const qty = document.getElementById(qtyId);
+        const total = document.getElementById(totalId);
+
+        function updateTotals() {
+            let n = parseFloat(nPrice.value) || 0;
+            let q = parseFloat(qty.value) || 0;
+            if(total) total.value = (n * q).toFixed(2);
+        }
 
         function calcFromPrice() {
             let s = parseFloat(sPrice.value) || 0;
@@ -493,6 +536,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             } else {
                 markup.value = ''; margin.value = '';
             }
+            updateTotals();
         }
 
         function calcFromMarkup() {
@@ -502,6 +546,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                 let n = s * (1 + (mk / 100));
                 nPrice.value = n.toFixed(2);
                 margin.value = (((n - s) / n) * 100).toFixed(2);
+                updateTotals();
             }
         }
 
@@ -512,6 +557,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                 let n = s / (1 - (mg / 100));
                 nPrice.value = n.toFixed(2);
                 markup.value = (((n - s) / s) * 100).toFixed(2);
+                updateTotals();
             }
         }
 
@@ -519,6 +565,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         if(nPrice) nPrice.addEventListener('input', calcFromPrice);
         if(markup) markup.addEventListener('input', calcFromMarkup);
         if(margin) margin.addEventListener('input', calcFromMargin);
+        if(qty) qty.addEventListener('input', updateTotals);
     }
 
     // --- EDIT MODAL LOGIC ---
@@ -529,75 +576,141 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
         document.getElementById('edit_s_price').value = parseFloat(row.suppliers_price).toFixed(2);
         document.getElementById('edit_n_price').value = parseFloat(row.nam_unit_price).toFixed(2);
         
-        // Trigger calculation to fill markup/margin fields
+        // Trigger calculation to fill markup/margin fields AND total
         document.getElementById('edit_n_price').dispatchEvent(new Event('input'));
         
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
-    // --- PREVIEW LOGIC ---
-    function showPreview() {
-        const form = document.getElementById('quoteForm');
-        if (!form.checkValidity()) { form.reportValidity(); return; }
-
-        const d = {
-            date: document.getElementById('date').value,
-            ref: document.getElementById('quote_ref').value,
-            client: document.getElementById('company').value,
-            item: document.getElementById('itemInput').value,
-            qty: document.getElementById('quantity').value,
-            price: parseFloat(document.getElementById('n_price').value) || 0,
-            po: document.getElementById('po').value,
-            term: document.getElementById('term').value,
-            remarks: document.getElementById('remarks').value
-        };
-        
-        const optPo = document.getElementById('showPo').checked;
-        const optTerms = document.getElementById('showTerms').checked;
-        const optRemarks = document.getElementById('showRemarks').checked;
-        
-        const total = (d.qty * d.price).toFixed(2);
-        
+    // --- FORMAL DOCUMENT PRINT RENDERING ---
+    function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
         const html = `
-            <div class="receipt-header">
-                <h4 class="fw-bold mb-0">NAM SUPPLY</h4>
-                <small>Official Quotation</small>
-            </div>
-            <div class="mb-3 d-flex justify-content-between">
-                <div>
-                    <strong>To:</strong> ${d.client}<br>
-                    <strong>Date:</strong> ${d.date}<br>
-                    ${(d.po && optPo) ? `<strong>PO #:</strong> ${d.po}<br>` : ''}
-                    ${(d.term && optTerms) ? `<strong>Terms:</strong> ${d.term}<br>` : ''}
+            <div id="printArea">
+                <div class="text-center mb-5 pb-3 border-bottom border-dark border-2">
+                    <h2 class="fw-bold mb-0" style="letter-spacing: 2px;">NAM SUPPLY</h2>
+                    <p class="mb-0 text-muted">Business Address / Contact Details Here</p>
+                    <h4 class="mt-4 fw-bold text-uppercase">Formal Quotation</h4>
                 </div>
-                <div class="text-end">
-                    <strong class="text-primary">Ref:</strong> ${d.ref}
+
+                <div class="row mb-4">
+                    <div class="col-8">
+                        <table class="table table-sm table-borderless mb-0">
+                            <tr><th width="100" class="text-muted">To:</th><td><input type="text" class="print-input w-100 fw-bold fs-6" value="${client}"></td></tr>
+                            <tr><th class="text-muted">Date:</th><td class="fw-bold">${date}</td></tr>
+                            ${po ? `<tr><th class="text-muted">PO #:</th><td>${po}</td></tr>` : ''}
+                            ${term ? `<tr><th class="text-muted">Terms:</th><td>${term}</td></tr>` : ''}
+                        </table>
+                    </div>
+                    <div class="col-4 text-end">
+                        <table class="table table-sm table-borderless mb-0 text-end">
+                            <tr><th class="text-muted">Quote Ref:</th><td class="fw-bold">${ref}</td></tr>
+                        </table>
+                    </div>
                 </div>
-            </div>
-            <table class="table table-sm table-bordered mb-2">
-                <thead class="table-light">
-                    <tr><th>Item Description</th><th class="text-end">Qty</th><th class="text-end">Unit Price</th><th class="text-end">Amount</th></tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>${d.item}</td>
-                        <td class="text-end">${d.qty}</td>
-                        <td class="text-end">₱${d.price.toFixed(2)}</td>
-                        <td class="text-end fw-bold">₱${total}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <div class="receipt-total fs-5 text-primary">
-                TOTAL: ₱${total}
-            </div>
-            ${(d.remarks && optRemarks) ? `<div class="mt-3 small text-muted border-top pt-2"><strong>Notes:</strong><br>${d.remarks.replace(/\\n/g, '<br>')}</div>` : ''}
-            
-            <div class="mt-4 text-center small text-muted">
-                This is a system generated quotation.<br>Valid for 30 days pending standard approvals.
+
+                <table class="table table-bordered border-dark mb-4">
+                    <thead class="table-light border-dark text-center">
+                        <tr>
+                            <th class="py-2 text-uppercase">Description</th>
+                            <th width="12%" class="py-2 text-uppercase">Qty</th>
+                            <th width="20%" class="py-2 text-uppercase">Unit Price</th>
+                            <th width="25%" class="py-2 text-uppercase">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody class="border-dark">
+                        ${tbodyHtml}
+                    </tbody>
+                    <tfoot class="border-dark">
+                        <tr>
+                            <th colspan="3" class="text-end py-3">GRAND TOTAL:</th>
+                            <th class="text-end py-3 fs-5 text-dark fw-bold">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                ${remarks ? `<div class="mt-4 mb-5 p-3 border border-dark rounded bg-light"><strong class="d-block mb-2 text-uppercase text-muted small">Remarks / Notes:</strong>${remarks.replace(/\\n/g, '<br>')}</div>` : '<div class="mb-5 pb-5"></div>'}
+
+                <div class="row mt-5 pt-5">
+                    <div class="col-5">
+                        <p class="mb-5 text-muted small text-uppercase">Prepared By:</p>
+                        <input type="text" class="print-input text-center w-100 fw-bold fs-6 mb-1" value="NAM Supply Representative">
+                        <div class="border-top border-dark text-center small pt-1 text-muted">Signature over printed name</div>
+                    </div>
+                    <div class="col-2"></div>
+                    <div class="col-5">
+                        <p class="mb-5 text-muted small text-uppercase">Conforme:</p>
+                        <input type="text" class="print-input text-center w-100 fw-bold fs-6 mb-1" placeholder="Type Client Name Here">
+                        <div class="border-top border-dark text-center small pt-1 text-muted">Signature over printed name</div>
+                    </div>
+                </div>
             </div>
         `;
         document.getElementById('receiptContent').innerHTML = html;
         new bootstrap.Modal(document.getElementById('previewModal')).show();
+    }
+
+    // Preview Single Item from Form
+    function showPreviewNew() {
+        const form = document.getElementById('quoteForm');
+        if (!form.checkValidity()) { form.reportValidity(); return; }
+
+        const date = document.getElementById('date').value;
+        const ref = document.getElementById('quote_ref').value;
+        const client = document.getElementById('company').value;
+        const item = document.getElementById('itemInput').value;
+        const qty = document.getElementById('quantity').value;
+        const price = parseFloat(document.getElementById('n_price').value) || 0;
+        const po = document.getElementById('po').value;
+        const term = document.getElementById('term').value;
+        const remarks = document.getElementById('remarks').value;
+        
+        const total = (qty * price);
+        
+        const tbodyHtml = `
+            <tr>
+                <td class="py-2">${item}</td>
+                <td class="text-center py-2">${qty}</td>
+                <td class="text-end py-2">₱${price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                <td class="text-end fw-bold py-2">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+            </tr>
+        `;
+
+        renderFormalPrint(date, ref, client, tbodyHtml, total, po, term, remarks);
+    }
+
+    // Print Multiple Items from Group
+    function printGroupedQuote(quotes, company, ref) {
+        let tbody = '';
+        let grandTotal = 0;
+        let date = quotes[0].date;
+        let po = quotes[0].po_number || '';
+        let term = quotes[0].payment_term || '';
+        let remarks = quotes[0].remarks || '';
+
+        quotes.forEach(q => {
+            let total = q.quantity_requested * q.nam_unit_price;
+            grandTotal += total;
+            tbody += `
+                <tr>
+                    <td class="py-2">${q.item}</td>
+                    <td class="text-center py-2">${q.quantity_requested}</td>
+                    <td class="text-end py-2">₱${parseFloat(q.nam_unit_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end fw-bold py-2">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                </tr>
+            `;
+        });
+
+        renderFormalPrint(date, ref, company, tbody, grandTotal, po, term, remarks);
+    }
+
+    // Execute Print Logic (Isolates print area to prevent modal cropping bugs)
+    function executePrint() {
+        // Copy the content from the modal box to the hidden print container attached to the body
+        const content = document.getElementById('printArea').outerHTML;
+        document.getElementById('printContainer').innerHTML = content;
+        
+        // Trigger browser print
+        window.print();
     }
     
     // --- SEARCH ACCORDIONS ---

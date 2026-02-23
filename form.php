@@ -102,7 +102,7 @@ $conn->close();
                                         <label class="form-label small fw-bold">Item Description <span class="required-star">*</span></label>
                                         <input type="text" name="item" id="itemInput" list="productList" class="form-control form-control-sm" required placeholder="Type to search stock..." autocomplete="off">
                                         <datalist id="productList"></datalist>
-                                    </div>
+                                </div>
                                 
                                 <div class="row g-2">
                                     <div class="col-12">
@@ -146,6 +146,15 @@ $conn->close();
                                     <div class="col-6">
                                         <label class="form-label small fw-bold">Total Sales</label>
                                         <input type="text" id="tSales" class="form-control form-control-sm calculated-field text-primary">
+                                    </div>
+
+                                    <div class="col-12 mt-3">
+                                        <div class="form-check form-switch p-2 rounded bg-white border">
+                                            <input class="form-check-input ms-1 me-2" type="checkbox" name="is_reserved" id="isReserved" value="1">
+                                            <label class="form-check-label small fw-bold text-danger" for="isReserved">
+                                                <i class="fas fa-bookmark me-1"></i> Mark Item as Reserved (Not Delivered)
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -293,6 +302,9 @@ $conn->close();
         const formData = new FormData(form);
         const entry = Object.fromEntries(formData.entries());
 
+        // Capture checkbox boolean properly
+        entry.is_reserved = document.getElementById('isReserved').checked ? 1 : 0;
+
         if(!entry.item || !entry.company || !entry.nam_unit_price) {
             alert("Please fill required fields (marked with *)");
             return;
@@ -312,11 +324,11 @@ $conn->close();
             const locked = document.getElementById('lockHeader').checked;
             if(locked) {
                 // Keep Client details, clear Item details
-                // NOTE: We do NOT clear 'company' here because it's part of the header
                 ['itemInput', 'quantity', 'sn', 'sPrice', 'nPrice', 'tActual', 'tSales', 'supplierName', 'sales_invoice_no', 'date_delivered'].forEach(id => {
                     const el = document.getElementById(id);
                     if(el) el.value = (id === 'quantity') ? '1' : '';
                 });
+                document.getElementById('isReserved').checked = false; // reset reserve switch
                 document.getElementById('itemInput').focus();
             } else {
                 form.reset();
@@ -343,12 +355,14 @@ $conn->close();
         batchQueue.forEach((item, idx) => {
             const total = (parseFloat(item.quantity_requested) * parseFloat(item.nam_unit_price)).toFixed(2);
             const rowClass = (idx === editingIndex) ? 'editing' : '';
+            const reserveBadge = item.is_reserved === 1 ? '<span class="badge bg-danger ms-1 mt-1"><i class="fas fa-bookmark me-1"></i>Reserved</span>' : '';
             
             html += `
                 <tr class="${rowClass}">
                     <td>
                         <div class="fw-bold text-dark">${item.item}</div>
                         <div class="small text-muted">${item.category}</div>
+                        ${reserveBadge}
                     </td>
                     <td>
                         <div class="text-truncate" style="max-width:150px;">${item.company}</div>
@@ -378,8 +392,10 @@ $conn->close();
 
         for (const [key, value] of Object.entries(item)) {
             const input = form.querySelector(`[name="${key}"]`);
-            if (input) input.value = value;
+            if (input && input.type !== 'checkbox') input.value = value;
         }
+        document.getElementById('isReserved').checked = (item.is_reserved === 1);
+
         calculate();
 
         // Toggle Buttons
@@ -438,8 +454,6 @@ $conn->close();
                 batchQueue = [];
                 cancelEdit();
                 renderQueue();
-                // Optionally reload page to refresh company list
-                // location.reload(); 
             } else {
                 alert('❌ Error: ' + data.message);
             }

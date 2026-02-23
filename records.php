@@ -60,7 +60,7 @@
 
         <div id="alertContainer"></div>
 
-        <div class="card shadow-sm border-0 mb-4">
+        <div class="card shadow-sm border-0 mb-3">
             <div class="card-body bg-white py-3">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-2">
@@ -68,7 +68,9 @@
                         <select id="filterStatus" class="form-select form-select-sm" onchange="applyFilters()">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending Delivery</option>
+                            <option value="partial">Partially Delivered</option>
                             <option value="delivered">Delivered</option>
+                            <option value="reserved">Reserved</option>
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -107,13 +109,22 @@
             </div>
         </div>
 
+        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+            <button class="btn btn-success btn-sm fw-bold shadow-sm" id="btnBulkDeliver" onclick="openBulkDeliverModal()" style="display: none;">
+                <i class="fas fa-truck-loading me-1"></i> Deliver Selected (<span id="selectedCount">0</span>)
+            </button>
+        </div>
+
         <div class="card shadow-sm border-0">
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover table-striped table-sm mb-0" id="recordsTable">
                         <thead class="bg-light">
                             <tr>
-                                <th class="ps-3">Status</th>
+                                <th class="ps-3" style="width: 40px;">
+                                    <input class="form-check-input border-secondary" type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                                </th>
+                                <th>Status</th>
                                 <th>Date</th>
                                 <th>S/N</th>
                                 <th>PO No.</th>
@@ -141,7 +152,7 @@
                             </tr>
                         </thead>
                         <tbody id="recordsBody">
-                            <tr><td colspan="25" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
+                            <tr><td colspan="26" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -161,6 +172,40 @@
                         <button class="btn btn-outline-secondary" onclick="changePage('next')"><i class="fas fa-angle-right"></i></button>
                         <button class="btn btn-outline-secondary" onclick="changePage('last')"><i class="fas fa-angle-double-right"></i></button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="bulkDeliverModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-success"><i class="fas fa-truck-loading me-2"></i>Bulk Deliver Items</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3">Adjust the quantities below if you are making a partial delivery. Delivering partial quantities will split the remaining amount into a new pending record.</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>Item Description</th>
+                                    <th>PO No.</th>
+                                    <th class="text-center">Pending Qty</th>
+                                    <th class="text-center" style="width: 150px;">Deliver Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bulkDeliverBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success fw-bold" id="btnConfirmBulk" onclick="submitBulkDelivery()">
+                        <i class="fas fa-check me-2"></i>Confirm Delivery
+                    </button>
                 </div>
             </div>
         </div>
@@ -316,12 +361,14 @@
         let filteredRecords = [];
         let currentPage = 1;
         const perPage = 50;
+        let poStatus = {};
 
-        // Modal Instance
-        let editModal;
+        // Modal Instances
+        let editModal, bulkDeliverModal;
 
         document.addEventListener('DOMContentLoaded', () => {
             editModal = new bootstrap.Modal(document.getElementById('editModal'));
+            bulkDeliverModal = new bootstrap.Modal(document.getElementById('bulkDeliverModal'));
             loadRecords();
         });
 
@@ -343,17 +390,32 @@
             }, 3000);
         }
 
+        const getGroupKey = (r) => {
+            return r.po_number ? (r.company + '|' + r.po_number) : (r.company + '|NO_PO|' + r.item + '|' + r.date);
+        };
+
         async function loadRecords() {
             try {
                 const res = await fetch('get_records.php');
                 const data = await res.json();
                 allRecords = data.records;
                 
+                poStatus = {};
+                allRecords.forEach(r => {
+                    const key = getGroupKey(r);
+                    if(!poStatus[key]) poStatus[key] = { pending: 0, delivered: 0 };
+                    
+                    if(r.date_delivered && r.date_delivered !== '0000-00-00') {
+                        poStatus[key].delivered++;
+                    } else {
+                        poStatus[key].pending++;
+                    }
+                });
+
                 // Populate filters
                 const compSelect = document.getElementById('filterCompany');
                 const catSelect = document.getElementById('filterCategory');
                 
-                // Keep "All" option only
                 compSelect.innerHTML = '<option value="">All Companies</option>';
                 catSelect.innerHTML = '<option value="">All Categories</option>';
 
@@ -382,15 +444,25 @@
             const dTo = document.getElementById('dateTo').value;
 
             filteredRecords = allRecords.filter(r => {
-                // Status Logic
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
+                const isReserved = (r.is_reserved == 1);
+                
+                let isPartial = false;
+                if (!isDelivered) {
+                    const key = getGroupKey(r);
+                    if (poStatus[key] && poStatus[key].delivered > 0) {
+                        isPartial = true;
+                    }
+                }
+
                 if (status === 'pending' && isDelivered) return false;
                 if (status === 'delivered' && !isDelivered) return false;
+                if (status === 'partial' && !isPartial) return false;
+                if (status === 'reserved' && !isReserved) return false;
 
                 if (company && r.company !== company) return false;
                 if (category && r.category !== category) return false;
                 
-                // Flexible Search
                 if (search) {
                     const haystack = (r.item + r.po_number + r.remarks + r.sn).toLowerCase();
                     if (!haystack.includes(search)) return false;
@@ -402,7 +474,6 @@
                 return true;
             });
 
-            // Update KPIs
             document.getElementById('totalRecords').textContent = filteredRecords.length.toLocaleString();
             
             const totalSales = filteredRecords.reduce((sum, r) => sum + parseFloat(r.total_nam_amount || 0), 0);
@@ -429,6 +500,10 @@
             const tbody = document.getElementById('recordsBody');
             tbody.innerHTML = '';
             
+            const selectAllCb = document.getElementById('selectAll');
+            if(selectAllCb) selectAllCb.checked = false;
+            updateSelectedCount();
+
             if(filteredRecords.length === 0) {
                 document.getElementById('noData').classList.remove('d-none');
                 document.getElementById('paginationBar').classList.add('d-none');
@@ -447,13 +522,32 @@
                 const tr = document.createElement('tr');
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
 
-                // Status Badge
-                const statusHtml = isDelivered 
-                    ? `<span class="badge rounded-pill bg-success"><i class="fas fa-check me-1"></i>Delivered</span>`
-                    : `<span class="badge rounded-pill bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>`;
+                let isPartial = false;
+                if (!isDelivered) {
+                    const key = getGroupKey(r);
+                    if (poStatus[key] && poStatus[key].delivered > 0) {
+                        isPartial = true;
+                    }
+                }
+
+                let statusHtml = '';
+                if (isDelivered) {
+                    statusHtml = `<span class="badge rounded-pill bg-success"><i class="fas fa-check me-1"></i>Delivered</span>`;
+                } else if (isPartial) {
+                    statusHtml = `<span class="badge rounded-pill bg-info text-dark"><i class="fas fa-truck-loading me-1"></i>Partially</span>`;
+                } else if (r.is_reserved == 1) {
+                    statusHtml = `<span class="badge rounded-pill bg-danger"><i class="fas fa-bookmark me-1"></i>Reserved</span>`;
+                } else {
+                    statusHtml = `<span class="badge rounded-pill bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>`;
+                }
+
+                const checkboxHtml = !isDelivered 
+                    ? `<input class="form-check-input border-secondary row-checkbox" type="checkbox" value="${r.id}" onchange="updateSelectedCount()">` 
+                    : `<input class="form-check-input" type="checkbox" disabled>`;
 
                 tr.innerHTML = `
-                    <td class="ps-3">${statusHtml}</td>
+                    <td class="ps-3">${checkboxHtml}</td>
+                    <td>${statusHtml}</td>
                     <td>${r.date}</td>
                     <td>${r.sn || ''}</td>
                     <td>${r.po_number || ''}</td>
@@ -479,6 +573,9 @@
                     <td class="col-truncate" title="${r.remarks || ''}">${r.remarks || ''}</td>
                     <td class="text-end bg-white" style="position:sticky; right:0;">
                         <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-warning" onclick="toggleReserve(${r.id}, ${r.is_reserved == 1 ? 0 : 1})" title="${r.is_reserved == 1 ? 'Remove Reservation' : 'Reserve Item'}">
+                                <i class="${r.is_reserved == 1 ? 'fas' : 'far'} fa-bookmark"></i>
+                            </button>
                             <button class="btn btn-outline-primary" onclick="editRecord(${r.id})" title="Edit"><i class="fas fa-edit"></i></button>
                             <button class="btn btn-outline-danger" onclick="deleteRecord(${r.id})" title="Delete"><i class="fas fa-trash-alt"></i></button>
                         </div>
@@ -489,6 +586,91 @@
 
             document.getElementById('currentPage').textContent = currentPage;
             document.getElementById('totalPages').textContent = totalPages;
+        }
+
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.row-checkbox:checked').length;
+            const btn = document.getElementById('btnBulkDeliver');
+            document.getElementById('selectedCount').textContent = count;
+            btn.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+
+        function toggleSelectAll(source) {
+            document.querySelectorAll('.row-checkbox').forEach(cb => {
+                if(!cb.disabled) cb.checked = source.checked;
+            });
+            updateSelectedCount();
+        }
+
+        function openBulkDeliverModal() {
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            const tbody = document.getElementById('bulkDeliverBody');
+            tbody.innerHTML = '';
+            
+            checkboxes.forEach(cb => {
+                const r = allRecords.find(item => item.id == cb.value);
+                if (r) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="align-middle col-truncate" title="${r.item}">${r.item}</td>
+                        <td class="align-middle">${r.po_number || '-'}</td>
+                        <td class="align-middle text-center fw-bold">${r.quantity_requested}</td>
+                        <td class="align-middle">
+                            <input type="number" class="form-control form-control-sm text-center bulk-qty-input border-primary fw-bold" 
+                                   data-id="${r.id}" data-max="${r.quantity_requested}" 
+                                   value="${r.quantity_requested}" min="1" max="${r.quantity_requested}">
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                }
+            });
+            
+            bulkDeliverModal.show();
+        }
+
+        async function submitBulkDelivery() {
+            const inputs = document.querySelectorAll('.bulk-qty-input');
+            const deliveries = [];
+            
+            for (const input of inputs) {
+                const id = input.getAttribute('data-id');
+                const qty = parseInt(input.value);
+                const max = parseInt(input.getAttribute('data-max'));
+                
+                if (qty < 1 || qty > max) {
+                    alert('Invalid delivery quantity entered for an item.');
+                    return;
+                }
+                deliveries.push({ id: id, qty: qty });
+            }
+            
+            if (deliveries.length === 0) return;
+            
+            const btn = document.getElementById('btnConfirmBulk');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+            
+            try {
+                const res = await fetch('mark_delivered.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ deliveries: deliveries })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    bulkDeliverModal.hide();
+                    loadRecords();
+                    showAlert(data.message || "Items successfully marked as delivered.", "success");
+                } else {
+                    showAlert("Error: " + data.message, "danger");
+                }
+            } catch(err) {
+                showAlert("Network error.", "danger");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check me-2"></i>Confirm Delivery';
+            }
         }
 
         function changePage(action) {
@@ -594,6 +776,26 @@
                 showAlert("Network error.", "danger");
             }
         }
+        
+        async function toggleReserve(id, val) {
+            try {
+                const res = await fetch('toggle_reserve.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id: id, val: val })
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    showAlert(val === 1 ? "Item Reserved successfully." : "Item Unreserved.", "success");
+                    loadRecords(); 
+                } else {
+                    showAlert("Failed to update reservation.", "danger");
+                }
+            } catch (err) {
+                showAlert("Network Error.", "danger");
+            }
+        }
     </script>
 </body>
-</html> 
+</html>

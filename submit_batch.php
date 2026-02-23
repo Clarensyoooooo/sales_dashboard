@@ -19,15 +19,15 @@ $conn = getDBConnection();
 $conn->begin_transaction();
 
 try {
-    // We insert NULL for date_delivered by default to mark it as PENDING
+    // Add is_reserved to the query
     $sql = "INSERT INTO sales (
-        date, sn, po_number, company, category, item, quantity_requested,
+        date, sn, po_number, company, category, item, quantity_requested, is_reserved,
         suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount,
         income, income_percent, 
         date_delivered, 
         payment_term, due_date, si_number,
         remarks, supplier, address, tin, sales_invoice_no, contact_person_contact
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
     $stmt = $conn->prepare($sql);
     
@@ -45,17 +45,17 @@ try {
         $income = $total_nam - $total_actual;
         $income_percent = ($total_nam > 0) ? ($income / $total_nam) * 100 : 0;
 
+        // Ensure we fetch the new toggle boolean
+        $is_reserved = isset($entry['is_reserved']) ? intval($entry['is_reserved']) : 0;
+
         // 2. Data Cleaning
         // CRITICAL: If date_delivered is empty, we MUST send NULL
         $date_del = !empty($entry['date_delivered']) ? $entry['date_delivered'] : null;
-        
         $due_date = !empty($entry['due_date']) ? $entry['due_date'] : null;
 
-        // 3. Bind Params (23 items)
-        // types: s=string, i=int, d=double
-        // Pattern: ssssssidddddssssssssss (Adjust based on your exact column types)
+        // 3. Bind Params (24 items total now, adding an 'i' for is_reserved after quantity_requested)
         $stmt->bind_param(
-            "ssssssiddddddssssssssss",
+            "ssssssiiddddddssssssssss",
             $entry['date'],
             $entry['sn'],
             $entry['po_number'],
@@ -63,13 +63,14 @@ try {
             $entry['category'],
             $entry['item'],
             $qty,
+            $is_reserved,   // <--- Added here
             $s_price,
             $total_actual,
             $n_price,
             $total_nam,
             $income,
             $income_percent,
-            $date_del,      // <--- This is now strictly NULL if empty
+            $date_del,      
             $entry['payment_term'],
             $due_date,
             $entry['si_number'],

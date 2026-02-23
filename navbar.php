@@ -73,7 +73,6 @@ function isActive($page) {
         
         <a class="navbar-brand d-flex align-items-center fw-bold text-primary" href="index.php" style="font-size: 1.25rem;">
             <img src="YOUR_LOGO_HERE.png" alt="NAM Supply Logo" class="navbar-logo me-2" onerror="this.style.display='none'">
-            <span class="navbar-brand-text text-dark">NAM Supply</span>
         </a>
 
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -167,5 +166,3 @@ function isActive($page) {
         </div>
     </div>
 </nav>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
