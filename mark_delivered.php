@@ -103,9 +103,19 @@ try {
 
         // 4. START TIMER (Apply Due Date) ONLY IF the PO or specific unassociated item Group is Fully Complete
         if ($pendingCount == 0) {
-            preg_match('/(\d+)/', $termStr, $matches);
-            $days = isset($matches[1]) ? intval($matches[1]) : 0;
-            $dueDate = date('Y-m-d', strtotime("+$days days"));
+            
+            // Fix: Default to 30 days instead of 0 if payment term is blank. 
+            // Handles parsing of terms like "30 Days", "Net 30", or "COD"
+            $days = 30; 
+            if (!empty($termStr)) {
+                if (preg_match('/(\d+)/', $termStr, $matches)) {
+                    $days = intval($matches[1]);
+                } elseif (stripos($termStr, 'cod') !== false || stripos($termStr, 'cash') !== false) {
+                    $days = 0;
+                }
+            }
+            
+            $dueDate = date('Y-m-d', strtotime("$today +$days days"));
             
             if (!empty($po)) {
                 $updateGroup = $conn->prepare("UPDATE sales SET due_date = ? WHERE po_number = ? AND company = ?");

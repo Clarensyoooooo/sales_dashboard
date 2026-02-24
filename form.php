@@ -3,14 +3,57 @@ require_once 'config.php';
 requireLogin(); 
 requirePermission('manage_sales'); 
 
-// FETCH COMPANIES FOR AUTOCOMPLETE
 $conn = getDBConnection();
-$companies = [];
-$res = $conn->query("SELECT DISTINCT company FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY company ASC");
+$clientData = [];
+
+// 1. FETCH FROM DATABASE: Get the most recent details for every company
+$res = $conn->query("
+    SELECT company, tin, address, contact_person_contact, payment_term
+    FROM sales 
+    WHERE company IS NOT NULL AND company != '' 
+    ORDER BY date DESC, id DESC
+");
+
 while($row = $res->fetch_assoc()) {
-    $companies[] = $row['company'];
+    $comp = trim($row['company']);
+    if (!isset($clientData[$comp])) {
+        // First time seeing this company (most recent record)
+        $clientData[$comp] = [
+            'tin' => trim($row['tin'] ?? ''),
+            'address' => trim($row['address'] ?? ''),
+            'contact' => trim($row['contact_person_contact'] ?? ''),
+            'term' => trim($row['payment_term'] ?? '')
+        ];
+    } else {
+        // Fill in missing details from older records if the newest one happens to be blank
+        if (empty($clientData[$comp]['tin']) && !empty($row['tin'])) $clientData[$comp]['tin'] = trim($row['tin']);
+        if (empty($clientData[$comp]['address']) && !empty($row['address'])) $clientData[$comp]['address'] = trim($row['address']);
+        if (empty($clientData[$comp]['contact']) && !empty($row['contact_person_contact'])) $clientData[$comp]['contact'] = trim($row['contact_person_contact']);
+        if (empty($clientData[$comp]['term']) && !empty($row['payment_term'])) $clientData[$comp]['term'] = trim($row['payment_term']);
+    }
 }
 $conn->close();
+
+// 2. MERGE WITH CSV: Ensure older companies without recent sales are still included
+$csvFile = 'CLIENT-TIN.csv'; 
+if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
+    fgetcsv($handle); // skip header
+    while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+        $compName = trim($data[0]);
+        $tin = isset($data[1]) ? trim($data[1]) : '';
+        if (!empty($compName)) {
+            if (!isset($clientData[$compName])) {
+                $clientData[$compName] = ['tin' => $tin, 'address' => '', 'contact' => '', 'term' => ''];
+            } elseif (empty($clientData[$compName]['tin'])) {
+                $clientData[$compName]['tin'] = $tin;
+            }
+        }
+    }
+    fclose($handle);
+}
+
+// Sort alphabetically by company name
+ksort($clientData);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -60,11 +103,14 @@ $conn->close();
                                 </div>
                                 
                                 <div class="row g-2">
-                                      <div class="col-12">
-                                        <label class="form-label small fw-bold">Company Name <span class="required-star">*</span></label>
-                                        <input type="text" name="company" class="form-control form-control-sm" list="companyList" required placeholder="Type to search or enter new..." autocomplete="off">
+                                    <div class="col-12">
+                                        <label class="form-label small fw-bold d-flex justify-content-between align-items-end mb-1">
+                                            <span>Company Name <span class="required-star">*</span></span>
+                                            <a href="javascript:void(0)" onclick="openClientModal()" class="text-decoration-none small text-primary fw-bold"><i class="fas fa-address-book me-1"></i>Add / Edit Client</a>
+                                        </label>
+                                        <input type="text" name="company" id="companyInput" class="form-control form-control-sm" list="companyList" required placeholder="Type to search or enter new..." autocomplete="off">
                                         <datalist id="companyList">
-                                            <?php foreach($companies as $comp): ?>
+                                            <?php foreach(array_keys($clientData) as $comp): ?>
                                                 <option value="<?php echo htmlspecialchars($comp); ?>">
                                             <?php endforeach; ?>
                                         </datalist>
@@ -241,12 +287,108 @@ $conn->close();
         </div>
     </div>
 
+    <div class="modal fade" id="clientModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-light">
+                    <h5 class="modal-title fw-bold text-dark"><i class="fas fa-building text-primary me-2"></i>Manage Client Database</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="clientForm" onsubmit="saveClient(event)">
+                    <div class="modal-body">
+                        <div class="alert alert-info py-2 small"><i class="fas fa-info-circle me-2"></i>Updates made here are saved directly to your permanent CSV list.</div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Company Name <span class="text-danger">*</span></label>
+                            <input type="text" id="modalClientName" class="form-control" required list="companyList">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">TIN Number</label>
+                            <input type="text" id="modalClientTIN" class="form-control" placeholder="000-000-000-000">
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-bold" id="btnSaveClient"><i class="fas fa-save me-2"></i>Save to Database</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
     let productMap = new Map();
     let batchQueue = [];
     let editingIndex = -1;
+
+    // --- 0. SMART CLIENT AUTO-FILL ---
+    const clients = <?php echo json_encode($clientData); ?>;
+
+    document.getElementById('companyInput').addEventListener('input', function() {
+        const selected = this.value;
+        if (clients.hasOwnProperty(selected)) {
+            const c = clients[selected];
+            document.querySelector('[name="tin"]').value = c.tin || '';
+            document.querySelector('[name="address"]').value = c.address || '';
+            document.querySelector('[name="contact_person_contact"]').value = c.contact || '';
+            document.querySelector('[name="payment_term"]').value = c.term || '';
+        }
+    });
+
+    // --- MANAGE CLIENT LOGIC (Modal) ---
+    let clientModalInstance;
+    document.addEventListener('DOMContentLoaded', () => {
+        clientModalInstance = new bootstrap.Modal(document.getElementById('clientModal'));
+    });
+
+    function openClientModal() {
+        document.getElementById('modalClientName').value = document.getElementById('companyInput').value;
+        document.getElementById('modalClientTIN').value = document.querySelector('[name="tin"]').value;
+        clientModalInstance.show();
+    }
+
+    async function saveClient(e) {
+        e.preventDefault();
+        const btn = document.getElementById('btnSaveClient');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+        btn.disabled = true;
+
+        const company = document.getElementById('modalClientName').value;
+        const tin = document.getElementById('modalClientTIN').value;
+
+        const formData = new FormData();
+        formData.append('company', company);
+        formData.append('tin', tin);
+
+        try {
+            const res = await fetch('save_client.php', { method: 'POST', body: formData });
+            const data = await res.json();
+            
+            if(data.success) {
+                document.getElementById('companyInput').value = company;
+                document.querySelector('[name="tin"]').value = tin;
+                
+                if(!clients[company]) clients[company] = {};
+                clients[company].tin = tin;
+                
+                clientModalInstance.hide();
+                
+                const tinInput = document.querySelector('[name="tin"]');
+                tinInput.classList.add('bg-success', 'text-white');
+                setTimeout(() => tinInput.classList.remove('bg-success', 'text-white'), 1000);
+            } else {
+                alert('❌ Error: ' + data.message);
+            }
+        } catch(err) {
+            console.error(err);
+            alert('❌ Network Error saving client.');
+        } finally {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+        }
+    }
 
     // --- 1. INIT ---
     fetch('get_all_products.php')
@@ -283,7 +425,6 @@ $conn->close();
             document.getElementById('nPrice').value = p.nam_price;
             document.getElementById('supplierName').value = p.supplier || '';
             
-            // Auto-select category
             const cat = document.getElementById('catSelect');
             for(let i=0; i<cat.options.length; i++) {
                 if(cat.options[i].value === p.category_code) {
@@ -302,7 +443,6 @@ $conn->close();
         const formData = new FormData(form);
         const entry = Object.fromEntries(formData.entries());
 
-        // Capture checkbox boolean properly
         entry.is_reserved = document.getElementById('isReserved').checked ? 1 : 0;
 
         if(!entry.item || !entry.company || !entry.nam_unit_price) {
@@ -319,16 +459,14 @@ $conn->close();
 
         renderQueue();
         
-        // Clear logic based on "Lock Header" switch
         if(editingIndex === -1) {
             const locked = document.getElementById('lockHeader').checked;
             if(locked) {
-                // Keep Client details, clear Item details
                 ['itemInput', 'quantity', 'sn', 'sPrice', 'nPrice', 'tActual', 'tSales', 'supplierName', 'sales_invoice_no', 'date_delivered'].forEach(id => {
                     const el = document.getElementById(id);
                     if(el) el.value = (id === 'quantity') ? '1' : '';
                 });
-                document.getElementById('isReserved').checked = false; // reset reserve switch
+                document.getElementById('isReserved').checked = false;
                 document.getElementById('itemInput').focus();
             } else {
                 form.reset();
@@ -398,7 +536,6 @@ $conn->close();
 
         calculate();
 
-        // Toggle Buttons
         document.getElementById('addBtn').style.display = 'none';
         document.getElementById('editButtons').style.display = 'flex';
         
@@ -411,7 +548,6 @@ $conn->close();
         document.getElementById('addBtn').style.display = 'block';
         document.getElementById('editButtons').style.display = 'none';
         
-        // Reset form to default state (respecting current date)
         const dateVal = document.getElementById('entryForm').querySelector('[name="date"]').value;
         const companyVal = document.getElementById('entryForm').querySelector('[name="company"]').value;
         const lock = document.getElementById('lockHeader').checked;
@@ -419,7 +555,6 @@ $conn->close();
         document.getElementById('entryForm').reset();
         document.getElementById('entryForm').querySelector('[name="date"]').value = dateVal;
         
-        // If locked, restore company
         if(lock) document.getElementById('entryForm').querySelector('[name="company"]').value = companyVal;
         
         renderQueue();
