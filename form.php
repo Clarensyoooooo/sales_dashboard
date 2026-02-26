@@ -6,7 +6,7 @@ requirePermission('manage_sales');
 $conn = getDBConnection();
 $clientData = [];
 
-// 1. FETCH FROM DATABASE: Get the most recent details for every company
+// 1. FETCH FROM DATABASE: Get details for every company
 $res = $conn->query("
     SELECT company, tin, address, contact_person_contact, payment_term
     FROM sales 
@@ -17,7 +17,6 @@ $res = $conn->query("
 while($row = $res->fetch_assoc()) {
     $comp = trim($row['company']);
     if (!isset($clientData[$comp])) {
-        // First time seeing this company (most recent record)
         $clientData[$comp] = [
             'tin' => trim($row['tin'] ?? ''),
             'address' => trim($row['address'] ?? ''),
@@ -25,7 +24,6 @@ while($row = $res->fetch_assoc()) {
             'term' => trim($row['payment_term'] ?? '')
         ];
     } else {
-        // Fill in missing details from older records if the newest one happens to be blank
         if (empty($clientData[$comp]['tin']) && !empty($row['tin'])) $clientData[$comp]['tin'] = trim($row['tin']);
         if (empty($clientData[$comp]['address']) && !empty($row['address'])) $clientData[$comp]['address'] = trim($row['address']);
         if (empty($clientData[$comp]['contact']) && !empty($row['contact_person_contact'])) $clientData[$comp]['contact'] = trim($row['contact_person_contact']);
@@ -34,10 +32,10 @@ while($row = $res->fetch_assoc()) {
 }
 $conn->close();
 
-// 2. MERGE WITH CSV: Ensure older companies without recent sales are still included
+// 2. MERGE WITH CSV
 $csvFile = 'CLIENT-TIN.csv'; 
 if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
-    fgetcsv($handle); // skip header
+    fgetcsv($handle); 
     while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
         $compName = trim($data[0]);
         $tin = isset($data[1]) ? trim($data[1]) : '';
@@ -52,30 +50,25 @@ if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
     fclose($handle);
 }
 
-// Sort alphabetically by company name
 ksort($clientData);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New Sale - NAM Supply</title>
+    <title>New Sale / Client - NAM Supply</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        .form-section-header { 
-            font-size: 0.85rem; font-weight: 700; text-transform: uppercase; 
-            letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee;
-        }
+        .form-section-header { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee; }
         .form-section-header.blue { color: #0d6efd; border-color: #0d6efd; }
         .form-section-header.green { color: #198754; border-color: #198754; }
         .form-section-header.orange { color: #fd7e14; border-color: #fd7e14; }
-        
         .calculated-field { background-color: #e9ecef; pointer-events: none; font-weight: 600; }
         .table-wrap { max-height: 65vh; overflow-y: auto; }
         tr.editing { background-color: #fff3cd !important; border-left: 4px solid #ffc107; }
         .required-star { color: #dc3545; }
+        .cursor-pointer { cursor: pointer; }
     </style>
 </head>
 <body class="bg-light">
@@ -106,9 +99,12 @@ ksort($clientData);
                                     <div class="col-12">
                                         <label class="form-label small fw-bold d-flex justify-content-between align-items-end mb-1">
                                             <span>Company Name <span class="required-star">*</span></span>
-                                            <a href="javascript:void(0)" onclick="openClientModal()" class="text-decoration-none small text-primary fw-bold"><i class="fas fa-address-book me-1"></i>Add / Edit Client</a>
+                                            <div class="d-flex gap-2">
+                                                <a href="javascript:void(0)" onclick="openClientListModal()" class="text-decoration-none small text-dark fw-bold"><i class="fas fa-list me-1"></i>List</a>
+                                                <a href="javascript:void(0)" onclick="openClientModal()" class="text-decoration-none small text-primary fw-bold"><i class="fas fa-plus-circle me-1"></i>Add</a>
+                                            </div>
                                         </label>
-                                        <input type="text" name="company" id="companyInput" class="form-control form-control-sm" list="companyList" required placeholder="Type to search or enter new..." autocomplete="off">
+                                        <input type="text" name="company" id="companyInput" class="form-control form-control-sm" list="companyList" required placeholder="Type or search..." autocomplete="off">
                                         <datalist id="companyList">
                                             <?php foreach(array_keys($clientData) as $comp): ?>
                                                 <option value="<?php echo htmlspecialchars($comp); ?>">
@@ -120,8 +116,8 @@ ksort($clientData);
                                         <input type="date" name="date" class="form-control form-control-sm" required value="<?php echo date('Y-m-d'); ?>">
                                     </div>
                                     <div class="col-6">
-                                        <label class="form-label small fw-bold">PO Number</label>
-                                        <input type="text" name="po_number" class="form-control form-control-sm">
+                                        <label class="form-label small fw-bold">PO / Inquiry #</label>
+                                        <input type="text" name="po_number" class="form-control form-control-sm" placeholder="PO or Inquiry Ref">
                                     </div>
                                     <div class="col-12">
                                         <input type="text" name="address" class="form-control form-control-sm mt-1" placeholder="Address (Optional)">
@@ -154,7 +150,6 @@ ksort($clientData);
                                     <div class="col-12">
                                         <label class="form-label small fw-bold">Category <span class="required-star">*</span></label>
                                         <select name="category" required id="catSelect" class="form-select form-select-sm">
-                                            <option value="">Select Category...</option>
                                             <option value="OFFICE SUPPLIES">OFFICE SUPPLIES</option>
                                             <option value="CLEANING MATERIALS">CLEANING MATERIALS</option>
                                             <option value="CONSUMABLES">CONSUMABLES</option>
@@ -164,6 +159,7 @@ ksort($clientData);
                                             <option value="COMPANY UNIFORM">UNIFORMS</option>
                                             <option value="OFFICE FURNITURE & FIXTURES">FURNITURE</option>
                                             <option value="MEDICINE">MEDICINE</option>
+                                            <option value="OTHERS">OTHERS</option>
                                         </select>
                                     </div>
                                    
@@ -198,7 +194,7 @@ ksort($clientData);
                                         <div class="form-check form-switch p-2 rounded bg-white border">
                                             <input class="form-check-input ms-1 me-2" type="checkbox" name="is_reserved" id="isReserved" value="1">
                                             <label class="form-check-label small fw-bold text-danger" for="isReserved">
-                                                <i class="fas fa-bookmark me-1"></i> Mark Item as Reserved (Not Delivered)
+                                                <i class="fas fa-bookmark me-1"></i> Reservation (Send to Quotations)
                                             </label>
                                         </div>
                                     </div>
@@ -224,7 +220,6 @@ ksort($clientData);
                                 <button type="submit" id="addBtn" class="btn btn-success fw-bold">
                                     <i class="fas fa-plus-circle me-2"></i>Add to List
                                 </button>
-                                
                                 <div id="editButtons" style="display:none;" class="gap-2">
                                     <button type="submit" id="updateBtn" class="btn btn-warning w-100 fw-bold">
                                         <i class="fas fa-save me-2"></i>Update Entry
@@ -234,7 +229,6 @@ ksort($clientData);
                                     </button>
                                 </div>
                             </div>
-
                         </form>
                     </div>
                 </div>
@@ -249,14 +243,13 @@ ksort($clientData);
                         </div>
                         <span class="badge bg-primary rounded-pill fs-6" id="qCount">0 Items</span>
                     </div>
-                    
                     <div class="card-body p-0 d-flex flex-column h-100">
                         <div class="table-wrap flex-grow-1">
                             <table class="table table-hover table-striped mb-0" id="qTable">
                                 <thead class="table-light sticky-top">
                                     <tr>
                                         <th>Item / Category</th>
-                                        <th>Client / PO</th>
+                                        <th>Client / Inquiry</th>
                                         <th class="text-end">Qty</th>
                                         <th class="text-end">Price</th>
                                         <th class="text-end">Total</th>
@@ -274,332 +267,405 @@ ksort($clientData);
                                 </tbody>
                             </table>
                         </div>
-                        
                         <div class="p-3 border-top bg-light">
-                            <button onclick="submitBatch()" class="btn btn-primary btn-lg w-100" id="submitBtn" disabled>
-                                <i class="fas fa-paper-plane me-2"></i>Submit All Records
+                            <button onclick="submitBatch()" class="btn btn-primary btn-lg w-100 fw-bold" id="submitBtn" disabled>
+                                <i class="fas fa-save me-2"></i>Save All Records
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
 
+    <div class="modal fade" id="clientListModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fas fa-users me-2"></i>Select Client to Edit</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="clientSearch" class="form-control mb-3" placeholder="Search Company Name...">
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table class="table table-hover table-sm">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Company</th>
+                                    <th>TIN</th>
+                                    <th>Contact</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clientListBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <div class="modal fade" id="clientModal" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header bg-light">
-                    <h5 class="modal-title fw-bold text-dark"><i class="fas fa-building text-primary me-2"></i>Manage Client Database</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-building me-2"></i>Save Client Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form id="clientForm" onsubmit="saveClient(event)">
-                    <div class="modal-body">
-                        <div class="alert alert-info py-2 small"><i class="fas fa-info-circle me-2"></i>Updates made here are saved directly to your permanent CSV list.</div>
+                <div class="modal-body">
+                    <form id="clientForm" onsubmit="saveClient(event)">
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Company Name <span class="text-danger">*</span></label>
-                            <input type="text" id="modalClientName" class="form-control" required list="companyList">
+                            <label class="form-label fw-bold">Company Name</label>
+                            <input type="text" id="modalClientName" class="form-control" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">TIN Number</label>
+                            <label class="form-label fw-bold">TIN</label>
                             <input type="text" id="modalClientTIN" class="form-control" placeholder="000-000-000-000">
                         </div>
-                    </div>
-                    <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary fw-bold" id="btnSaveClient"><i class="fas fa-save me-2"></i>Save to Database</button>
-                    </div>
-                </form>
+                        <div class="d-grid">
+                            <button type="submit" id="btnSaveClient" class="btn btn-primary fw-bold">Save Details</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
     <script>
-    let productMap = new Map();
-    let batchQueue = [];
-    let editingIndex = -1;
+        let productMap = new Map();
+        let batchQueue = [];
+        let editingIndex = -1;
+        const clients = <?php echo json_encode($clientData); ?>;
 
-    // --- 0. SMART CLIENT AUTO-FILL ---
-    const clients = <?php echo json_encode($clientData); ?>;
-
-    document.getElementById('companyInput').addEventListener('input', function() {
-        const selected = this.value;
-        if (clients.hasOwnProperty(selected)) {
-            const c = clients[selected];
-            document.querySelector('[name="tin"]').value = c.tin || '';
-            document.querySelector('[name="address"]').value = c.address || '';
-            document.querySelector('[name="contact_person_contact"]').value = c.contact || '';
-            document.querySelector('[name="payment_term"]').value = c.term || '';
-        }
-    });
-
-    // --- MANAGE CLIENT LOGIC (Modal) ---
-    let clientModalInstance;
-    document.addEventListener('DOMContentLoaded', () => {
-        clientModalInstance = new bootstrap.Modal(document.getElementById('clientModal'));
-    });
-
-    function openClientModal() {
-        document.getElementById('modalClientName').value = document.getElementById('companyInput').value;
-        document.getElementById('modalClientTIN').value = document.querySelector('[name="tin"]').value;
-        clientModalInstance.show();
-    }
-
-    async function saveClient(e) {
-        e.preventDefault();
-        const btn = document.getElementById('btnSaveClient');
-        const origText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
-        btn.disabled = true;
-
-        const company = document.getElementById('modalClientName').value;
-        const tin = document.getElementById('modalClientTIN').value;
-
-        const formData = new FormData();
-        formData.append('company', company);
-        formData.append('tin', tin);
-
-        try {
-            const res = await fetch('save_client.php', { method: 'POST', body: formData });
-            const data = await res.json();
-            
-            if(data.success) {
-                document.getElementById('companyInput').value = company;
-                document.querySelector('[name="tin"]').value = tin;
-                
-                if(!clients[company]) clients[company] = {};
-                clients[company].tin = tin;
-                
-                clientModalInstance.hide();
-                
-                const tinInput = document.querySelector('[name="tin"]');
-                tinInput.classList.add('bg-success', 'text-white');
-                setTimeout(() => tinInput.classList.remove('bg-success', 'text-white'), 1000);
-            } else {
-                alert('❌ Error: ' + data.message);
-            }
-        } catch(err) {
-            console.error(err);
-            alert('❌ Network Error saving client.');
-        } finally {
-            btn.innerHTML = origText;
-            btn.disabled = false;
-        }
-    }
-
-    // --- 1. INIT ---
-    fetch('get_all_products.php')
-        .then(res => res.json())
-        .then(data => {
-            const dl = document.getElementById('productList');
-            data.forEach(p => {
-                productMap.set(p.name, p);
-                const opt = document.createElement('option');
-                opt.value = p.name;
-                opt.label = `Stock: ${p.current_stock} | ₱${p.nam_price}`;
-                dl.appendChild(opt);
-            });
+        // --- 0. SMART CLIENT AUTO-FILL ---
+        document.getElementById('companyInput').addEventListener('input', function() {
+            fillClientDetails(this.value);
         });
 
-    // --- 2. CALCULATIONS ---
-    ['quantity', 'sPrice', 'nPrice'].forEach(id => {
-        document.getElementById(id).addEventListener('input', calculate);
-    });
+        function fillClientDetails(compName) {
+            if (clients.hasOwnProperty(compName)) {
+                const c = clients[compName];
+                document.querySelector('[name="tin"]').value = c.tin || '';
+                document.querySelector('[name="address"]').value = c.address || '';
+                document.querySelector('[name="contact_person_contact"]').value = c.contact || '';
+                document.querySelector('[name="payment_term"]').value = c.term || '';
+            }
+        }
 
-    function calculate() {
-        const qty = parseFloat(document.getElementById('quantity').value) || 0;
-        const sPrice = parseFloat(document.getElementById('sPrice').value) || 0;
-        const nPrice = parseFloat(document.getElementById('nPrice').value) || 0;
+        // --- MANAGE CLIENT LOGIC ---
+        let clientModalInstance;
+        let clientListModalInstance;
 
-        document.getElementById('tActual').value = (qty * sPrice).toFixed(2);
-        document.getElementById('tSales').value = (qty * nPrice).toFixed(2);
-    }
+        document.addEventListener('DOMContentLoaded', () => {
+            clientModalInstance = new bootstrap.Modal(document.getElementById('clientModal'));
+            clientListModalInstance = new bootstrap.Modal(document.getElementById('clientListModal'));
+        });
 
-    document.getElementById('itemInput').addEventListener('input', function() {
-        const p = productMap.get(this.value);
-        if (p) {
-            document.getElementById('sPrice').value = p.supplier_price;
-            document.getElementById('nPrice').value = p.nam_price;
-            document.getElementById('supplierName').value = p.supplier || '';
+        function openClientListModal() {
+            renderClientList();
+            clientListModalInstance.show();
+        }
+
+        function renderClientList(filter = '') {
+            const tbody = document.getElementById('clientListBody');
+            tbody.innerHTML = '';
+            filter = filter.toLowerCase();
+
+            Object.keys(clients).forEach(comp => {
+                if(comp.toLowerCase().includes(filter)) {
+                    const c = clients[comp];
+                    const tr = document.createElement('tr');
+                    tr.classList.add('cursor-pointer');
+                    tr.innerHTML = `
+                        <td class="fw-bold text-primary">${comp}</td>
+                        <td><small>${c.tin}</small></td>
+                        <td><small>${c.contact}</small></td>
+                        <td class="text-end"><button class="btn btn-sm btn-outline-primary py-0">Select</button></td>
+                    `;
+                    tr.onclick = () => {
+                        document.getElementById('companyInput').value = comp;
+                        fillClientDetails(comp);
+                        clientListModalInstance.hide();
+                    };
+                    tbody.appendChild(tr);
+                }
+            });
+        }
+
+        document.getElementById('clientSearch').addEventListener('input', (e) => {
+            renderClientList(e.target.value);
+        });
+
+        function openClientModal() {
+            document.getElementById('modalClientName').value = document.getElementById('companyInput').value;
+            document.getElementById('modalClientTIN').value = document.querySelector('[name="tin"]').value;
+            clientModalInstance.show();
+        }
+
+        async function saveClient(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btnSaveClient');
+            const origText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Saving...';
+            btn.disabled = true;
+
+            const company = document.getElementById('modalClientName').value;
+            const tin = document.getElementById('modalClientTIN').value;
+            const formData = new FormData();
+            formData.append('company', company);
+            formData.append('tin', tin);
+
+            try {
+                const res = await fetch('save_client.php', { method: 'POST', body: formData });
+                const data = await res.json();
+                if(data.success) {
+                    document.getElementById('companyInput').value = company;
+                    document.querySelector('[name="tin"]').value = tin;
+                    if(!clients[company]) clients[company] = {};
+                    clients[company].tin = tin;
+                    clientModalInstance.hide();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch(err) {
+                console.error(err);
+            } finally {
+                btn.innerHTML = origText;
+                btn.disabled = false;
+            }
+        }
+
+        // --- 1. INIT PRODUCTS ---
+        fetch('get_all_products.php')
+            .then(res => res.json())
+            .then(data => {
+                const dl = document.getElementById('productList');
+                data.forEach(p => {
+                    productMap.set(p.name, p);
+                    const opt = document.createElement('option');
+                    opt.value = p.name;
+                    opt.label = `Stock: ${p.current_stock} | ₱${p.nam_price}`;
+                    dl.appendChild(opt);
+                });
+            });
+
+        // --- 2. CALCULATIONS & AUTOFILL ---
+        document.getElementById('itemInput').addEventListener('input', function() {
+            const p = productMap.get(this.value);
+            if (p) {
+                document.getElementById('sPrice').value = p.supplier_price;
+                document.getElementById('nPrice').value = p.nam_price;
+                document.getElementById('catSelect').value = p.category_code || 'OFFICE SUPPLIES';
+                if(p.supplier) document.getElementById('supplierName').value = p.supplier;
+                calculate();
+            }
+        });
+
+        ['quantity', 'sPrice', 'nPrice'].forEach(id => {
+            document.getElementById(id).addEventListener('input', calculate);
+        });
+
+        function calculate() {
+            const qty = parseFloat(document.getElementById('quantity').value) || 0;
+            const sPrice = parseFloat(document.getElementById('sPrice').value) || 0;
+            const nPrice = parseFloat(document.getElementById('nPrice').value) || 0;
+            document.getElementById('tActual').value = (qty * sPrice).toFixed(2);
+            document.getElementById('tSales').value = (qty * nPrice).toFixed(2);
+        }
+
+        // --- 3. HANDLE FORM SUBMIT (QUEUE) ---
+        function handleFormSubmit(e) {
+            e.preventDefault();
+            const form = document.getElementById('entryForm');
+            const formData = new FormData(form);
+            const entry = Object.fromEntries(formData.entries());
             
-            const cat = document.getElementById('catSelect');
-            for(let i=0; i<cat.options.length; i++) {
-                if(cat.options[i].value === p.category_code) {
-                    cat.selectedIndex = i;
-                    break;
+            // Handle Checkbox Manually
+            entry.is_reserved = document.getElementById('isReserved').checked ? 1 : 0;
+
+            if(!entry.item || !entry.company || !entry.nam_unit_price) {
+                alert("Please fill required fields (marked with *)");
+                return;
+            }
+
+            if (editingIndex === -1) {
+                batchQueue.push(entry);
+            } else {
+                batchQueue[editingIndex] = entry;
+                cancelEdit();
+            }
+            renderQueue();
+            
+            // Reset logic based on Lock
+            if(editingIndex === -1) {
+                if(document.getElementById('lockHeader').checked) {
+                    ['itemInput', 'quantity', 'sn', 'sPrice', 'nPrice', 'tActual', 'tSales', 'supplierName', 'sales_invoice_no', 'date_delivered'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if(el) el.value = (id === 'quantity') ? '1' : '';
+                    });
+                    document.getElementById('isReserved').checked = false;
+                    document.getElementById('itemInput').focus();
+                } else {
+                    form.reset();
+                    form.querySelector('[name="date"]').value = new Date().toISOString().split('T')[0];
                 }
             }
-            calculate();
-        }
-    });
-
-    // --- 3. FORM HANDLER ---
-    function handleFormSubmit(e) {
-        e.preventDefault();
-        const form = document.getElementById('entryForm');
-        const formData = new FormData(form);
-        const entry = Object.fromEntries(formData.entries());
-
-        entry.is_reserved = document.getElementById('isReserved').checked ? 1 : 0;
-
-        if(!entry.item || !entry.company || !entry.nam_unit_price) {
-            alert("Please fill required fields (marked with *)");
-            return;
         }
 
-        if (editingIndex === -1) {
-            batchQueue.push(entry);
-        } else {
-            batchQueue[editingIndex] = entry;
-            cancelEdit();
-        }
-
-        renderQueue();
-        
-        if(editingIndex === -1) {
-            const locked = document.getElementById('lockHeader').checked;
-            if(locked) {
-                ['itemInput', 'quantity', 'sn', 'sPrice', 'nPrice', 'tActual', 'tSales', 'supplierName', 'sales_invoice_no', 'date_delivered'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if(el) el.value = (id === 'quantity') ? '1' : '';
-                });
-                document.getElementById('isReserved').checked = false;
-                document.getElementById('itemInput').focus();
-            } else {
-                form.reset();
-                form.querySelector('[name="date"]').value = new Date().toISOString().split('T')[0];
-            }
-        }
-    }
-
-    // --- 4. RENDER QUEUE ---
-    function renderQueue() {
-        const tbody = document.querySelector('#qTable tbody');
-        const count = document.getElementById('qCount');
-        const btn = document.getElementById('submitBtn');
-
-        count.textContent = batchQueue.length + " Items";
-        btn.disabled = batchQueue.length === 0;
-
-        if (batchQueue.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>List is empty. Add items from the left.</td></tr>';
-            return;
-        }
-
-        let html = '';
-        batchQueue.forEach((item, idx) => {
-            const total = (parseFloat(item.quantity_requested) * parseFloat(item.nam_unit_price)).toFixed(2);
-            const rowClass = (idx === editingIndex) ? 'editing' : '';
-            const reserveBadge = item.is_reserved === 1 ? '<span class="badge bg-danger ms-1 mt-1"><i class="fas fa-bookmark me-1"></i>Reserved</span>' : '';
+        function renderQueue() {
+            const tbody = document.querySelector('#qTable tbody');
+            const count = document.getElementById('qCount');
+            const btn = document.getElementById('submitBtn');
             
-            html += `
-                <tr class="${rowClass}">
-                    <td>
-                        <div class="fw-bold text-dark">${item.item}</div>
-                        <div class="small text-muted">${item.category}</div>
-                        ${reserveBadge}
-                    </td>
-                    <td>
-                        <div class="text-truncate" style="max-width:150px;">${item.company}</div>
-                        <div class="small text-muted">PO: ${item.po_number || '-'}</div>
-                    </td>
-                    <td class="text-end">${item.quantity_requested}</td>
-                    <td class="text-end">${item.nam_unit_price}</td>
-                    <td class="text-end fw-bold text-primary">${total}</td>
-                    <td class="small text-muted">${item.supplier || '-'}</td>
-                    <td class="text-end">
-                        <div class="btn-group btn-group-sm">
-                            <button onclick="editItem(${idx})" class="btn btn-outline-secondary" title="Edit"><i class="fas fa-pencil-alt"></i></button>
-                            <button onclick="removeItem(${idx})" class="btn btn-outline-danger" title="Remove"><i class="fas fa-times"></i></button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        tbody.innerHTML = html;
-    }
+            count.textContent = batchQueue.length + " Items";
+            btn.disabled = batchQueue.length === 0;
 
-    // --- 5. EDIT LOGIC ---
-    window.editItem = function(idx) {
-        editingIndex = idx;
-        const item = batchQueue[idx];
-        const form = document.getElementById('entryForm');
+            if (batchQueue.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-5 text-muted">List is empty.</td></tr>';
+                return;
+            }
 
-        for (const [key, value] of Object.entries(item)) {
-            const input = form.querySelector(`[name="${key}"]`);
-            if (input && input.type !== 'checkbox') input.value = value;
-        }
-        document.getElementById('isReserved').checked = (item.is_reserved === 1);
-
-        calculate();
-
-        document.getElementById('addBtn').style.display = 'none';
-        document.getElementById('editButtons').style.display = 'flex';
-        
-        renderQueue();
-        document.getElementById('itemInput').focus();
-    }
-
-    window.cancelEdit = function() {
-        editingIndex = -1;
-        document.getElementById('addBtn').style.display = 'block';
-        document.getElementById('editButtons').style.display = 'none';
-        
-        const dateVal = document.getElementById('entryForm').querySelector('[name="date"]').value;
-        const companyVal = document.getElementById('entryForm').querySelector('[name="company"]').value;
-        const lock = document.getElementById('lockHeader').checked;
-
-        document.getElementById('entryForm').reset();
-        document.getElementById('entryForm').querySelector('[name="date"]').value = dateVal;
-        
-        if(lock) document.getElementById('entryForm').querySelector('[name="company"]').value = companyVal;
-        
-        renderQueue();
-    }
-
-    window.removeItem = function(idx) {
-        if(idx === editingIndex) cancelEdit();
-        batchQueue.splice(idx, 1);
-        if(idx < editingIndex) editingIndex--;
-        renderQueue();
-    }
-
-    // --- 6. SUBMIT ---
-    window.submitBatch = async function() {
-        if(!confirm(`Submit ${batchQueue.length} records to database?`)) return;
-        
-        const btn = document.getElementById('submitBtn');
-        const origText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
-
-        try {
-            const res = await fetch('submit_batch.php', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(batchQueue)
+            let html = '';
+            batchQueue.forEach((item, idx) => {
+                const total = (parseFloat(item.quantity_requested) * parseFloat(item.nam_unit_price)).toFixed(2);
+                const reserveBadge = item.is_reserved == 1 ? '<span class="badge bg-danger ms-1">Reserved</span>' : '';
+                
+                html += `
+                    <tr class="${idx === editingIndex ? 'editing' : ''}">
+                        <td>
+                            <div class="fw-bold text-dark">${item.item}</div>
+                            <div class="small text-muted">${item.category}</div>
+                            ${reserveBadge}
+                        </td>
+                        <td>
+                            <div class="text-truncate" style="max-width:150px;">${item.company}</div>
+                            <div class="small text-muted">${item.po_number || '-'}</div>
+                        </td>
+                        <td class="text-end">${item.quantity_requested}</td>
+                        <td class="text-end">${item.nam_unit_price}</td>
+                        <td class="text-end fw-bold text-primary">${total}</td>
+                        <td class="small text-muted">${item.supplier || '-'}</td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button onclick="editItem(${idx})" class="btn btn-outline-secondary"><i class="fas fa-pencil-alt"></i></button>
+                                <button onclick="removeItem(${idx})" class="btn btn-outline-danger"><i class="fas fa-times"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
             });
-            const data = await res.json();
+            tbody.innerHTML = html;
+        }
 
-            if(data.success) {
-                alert(`✅ Success! Added ${data.count} records.`);
+        window.editItem = function(idx) {
+            editingIndex = idx;
+            const item = batchQueue[idx];
+            const form = document.getElementById('entryForm');
+            for (const [key, value] of Object.entries(item)) {
+                const input = form.querySelector(`[name="${key}"]`);
+                if(input) input.value = value;
+            }
+            document.getElementById('isReserved').checked = (item.is_reserved == 1);
+            
+            document.getElementById('addBtn').style.display = 'none';
+            document.getElementById('editButtons').style.display = 'flex';
+            renderQueue();
+        }
+
+        window.cancelEdit = function() {
+            editingIndex = -1;
+            document.getElementById('entryForm').reset();
+            document.getElementById('addBtn').style.display = 'block';
+            document.getElementById('editButtons').style.display = 'none';
+            renderQueue();
+        }
+
+        window.removeItem = function(idx) {
+            batchQueue.splice(idx, 1);
+            if(idx < editingIndex) editingIndex--;
+            renderQueue();
+        }
+
+        // --- 4. SUBMIT SPLIT LOGIC ---
+        window.submitBatch = async function() {
+            if(!confirm(`Submit ${batchQueue.length} records?`)) return;
+            
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+
+            const reservations = batchQueue.filter(i => i.is_reserved == 1);
+            const sales = batchQueue.filter(i => i.is_reserved != 1);
+
+            let errorOccurred = false;
+
+            // 1. Process Reservations (Send to Quotations API)
+            if(reservations.length > 0) {
+                // Group by Company/PO for header
+                // Note: For simplicity, we create one header per item or group identicals. 
+                // Here we simply push individual items to quotaion API as a batch.
+                // We construct the "header" from the first item, but technically each could differ.
+                // A better approach is to submit 1 by 1 or group. Let's submit 1 batch per unique Client+PO combination.
+                
+                // For now, simpler: map to the structure quotations.php expects
+                const header = {
+                    date: reservations[0].date,
+                    quote_ref: 'RES-' + Date.now(), // Auto temp ref
+                    company: reservations[0].company,
+                    po: reservations[0].po_number,
+                    term: reservations[0].payment_term,
+                    remarks: reservations[0].remarks
+                };
+                
+                const items = reservations.map(r => ({
+                    item: r.item,
+                    category: r.category,
+                    quantity: r.quantity_requested,
+                    s_price: r.suppliers_price,
+                    n_price: r.nam_unit_price
+                }));
+
+                try {
+                    const res = await fetch('quotations.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            action: 'create_quote_batch',
+                            header: header,
+                            items: items,
+                            status: 'Reserved' // New status handling
+                        })
+                    });
+                    const d = await res.json();
+                    if(!d.success) { console.error('Reservation Error', d); errorOccurred = true; }
+                } catch(e) { errorOccurred = true; }
+            }
+
+            // 2. Process Sales (Send to Submit Batch)
+            if(sales.length > 0 && !errorOccurred) {
+                try {
+                    const res = await fetch('submit_batch.php', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(sales)
+                    });
+                    const d = await res.json();
+                    if(!d.success) { alert('Sales Error: ' + d.message); errorOccurred = true; }
+                } catch(e) { errorOccurred = true; }
+            }
+
+            if(!errorOccurred) {
+                alert(`✅ Success! Processed ${batchQueue.length} items.`);
                 batchQueue = [];
-                cancelEdit();
                 renderQueue();
             } else {
-                alert('❌ Error: ' + data.message);
+                alert("❌ Some items failed to save. Please check console.");
             }
-        } catch(e) {
-            console.error(e);
-            alert("❌ Network Error");
-        } finally {
-            btn.innerHTML = origText;
-            btn.disabled = batchQueue.length === 0;
+            
+            btn.innerHTML = '<i class="fas fa-save me-2"></i>Save All Records';
+            btn.disabled = false;
         }
-    }
     </script>
 </body>
 </html>

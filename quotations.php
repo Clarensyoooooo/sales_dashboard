@@ -2,13 +2,31 @@
 require_once 'config.php'; 
 requireLogin(); 
 
+// --- AUTO-GENERATE NEXT REFERENCE NUMBER (YYYY-XXX) ---
+function getNextQuoteRef($conn) {
+    $yr = date('Y');
+    // Find the last reference starting with current year
+    $res = $conn->query("SELECT quote_ref FROM quotations WHERE quote_ref LIKE '$yr-%' ORDER BY id DESC LIMIT 1");
+    $last = $res->fetch_assoc();
+    $num = 1;
+    if ($last) {
+        $parts = explode('-', $last['quote_ref']);
+        if (isset($parts[1]) && is_numeric($parts[1])) {
+            $num = intval($parts[1]) + 1;
+        }
+    }
+    return $yr . '-' . str_pad($num, 3, '0', STR_PAD_LEFT);
+}
+
 // --- 0. BATCH QUOTE CREATION (JSON API ENDPOINT) ---
 $input = json_decode(file_get_contents('php://input'), true);
 if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch') {
     $conn = getDBConnection();
     $conn->begin_transaction();
     try {
-        $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        // Allows form.php to send "Reserved" status
+        $status = isset($input['status']) ? $input['status'] : 'Pending'; 
+        $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         
         $header = $input['header'];
         $items = $input['items'];
@@ -16,11 +34,12 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
         foreach($items as $item) {
             $total = $item['quantity'] * $item['n_price'];
             $cat = !empty($item['category']) ? $item['category'] : 'Uncategorized';
-            $stmt->bind_param("sssssidddsss", 
+            $stmt->bind_param("sssssidddssss", 
                 $header['date'], $header['quote_ref'], $header['company'], 
                 $cat, $item['item'], $item['quantity'], 
                 $item['s_price'], $item['n_price'], $total, 
-                $header['po'], $header['term'], $header['remarks']
+                $header['po'], $header['term'], $header['remarks'],
+                $status
             );
             $stmt->execute();
         }
@@ -33,26 +52,68 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
     exit; // Stop execution after handling the JSON POST
 }
 
-// --- 1. APPROVE QUOTE (WAITING FOR SIGNATURES) ---
+// --- 1. APPROVE QUOTE & DEDUCT STOCK ---
 if (isset($_POST['approve_id'])) {
     $q_id = intval($_POST['approve_id']);
     $conn = getDBConnection();
-    $conn->query("UPDATE quotations SET status = 'Approved' WHERE id = $q_id");
-    header("Location: quotations.php?msg=approved");
+
+    $q = $conn->query("SELECT * FROM quotations WHERE id = $q_id")->fetch_assoc();
+    
+    if ($q && $q['status'] != 'Approved' && $q['status'] != 'Converted') {
+        // Check Stock First
+        $check = $conn->prepare("SELECT current_stock FROM products WHERE name = ?");
+        $check->bind_param("s", $q['item']);
+        $check->execute();
+        $stock = $check->get_result()->fetch_assoc();
+        
+        if ($stock && $stock['current_stock'] >= $q['quantity_requested']) {
+            $conn->begin_transaction();
+            try {
+                // Deduct Stock
+                $upd = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
+                $upd->bind_param("is", $q['quantity_requested'], $q['item']);
+                $upd->execute();
+                
+                // Update Status
+                $conn->query("UPDATE quotations SET status = 'Approved' WHERE id = $q_id");
+                
+                $conn->commit();
+                $msg = "approved";
+            } catch (Exception $e) {
+                $conn->rollback();
+                $msg = "error_db";
+            }
+        } else {
+            $msg = "error_stock";
+        }
+    } else {
+        $msg = "already_approved";
+    }
+    header("Location: quotations.php?msg=$msg");
     exit;
 }
 
-// --- 2. DELETE QUOTE ITEM ---
+// --- 2. DELETE QUOTE ITEM (AND RESTORE STOCK IF APPROVED) ---
 if (isset($_POST['delete_id'])) {
     $d_id = intval($_POST['delete_id']);
     $conn = getDBConnection();
-    // Only allow deleting if not converted yet to maintain data integrity
-    $conn->query("DELETE FROM quotations WHERE id = $d_id AND status != 'Converted'");
+    
+    $q = $conn->query("SELECT * FROM quotations WHERE id = $d_id")->fetch_assoc();
+    if ($q) {
+        // Only allow deleting if not converted yet to maintain data integrity
+        if ($q['status'] != 'Converted') {
+            // If it was already approved, return the stock to inventory before deleting
+            if ($q['status'] == 'Approved') {
+                $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
+            }
+            $conn->query("DELETE FROM quotations WHERE id = $d_id");
+        }
+    }
     header("Location: quotations.php?msg=deleted");
     exit;
 }
 
-// --- 3. FINALIZE TO SALE (CONVERT & DEDUCT STOCK WITH TRANSACTION) ---
+// --- 3. FINALIZE TO SALE (CONVERT) ---
 if (isset($_POST['convert_id'])) {
     $q_id = intval($_POST['convert_id']);
     $conn = getDBConnection();
@@ -60,56 +121,58 @@ if (isset($_POST['convert_id'])) {
     $q = $conn->query("SELECT * FROM quotations WHERE id = $q_id")->fetch_assoc();
     
     if ($q) {
-        $check = $conn->prepare("SELECT current_stock FROM products WHERE name = ?");
-        $check->bind_param("s", $q['item']);
-        $check->execute();
-        $stock = $check->get_result()->fetch_assoc();
+        // --- START TRANSACTION ---
+        $conn->begin_transaction();
         
-        if ($stock && $stock['current_stock'] >= $q['quantity_requested']) {
+        try {
+            // 1. Insert into Sales
+            $income = ($q['nam_unit_price'] * $q['quantity_requested']) - ($q['suppliers_price'] * $q['quantity_requested']);
+            $percent = ($q['nam_unit_price'] > 0) ? ($income / ($q['nam_unit_price'] * $q['quantity_requested'])) * 100 : 0;
             
-            // --- START TRANSACTION ---
-            $conn->begin_transaction();
+            $stmt = $conn->prepare("INSERT INTO sales (date, company, category, item, quantity_requested, suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount, income, income_percent, po_number, payment_term, remarks, date_delivered, due_date) VALUES (CURRENT_DATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)");
             
-            try {
-                $income = ($q['nam_unit_price'] * $q['quantity_requested']) - ($q['suppliers_price'] * $q['quantity_requested']);
-                $percent = ($q['nam_unit_price'] > 0) ? ($income / ($q['nam_unit_price'] * $q['quantity_requested'])) * 100 : 0;
+            $total_actual = $q['suppliers_price'] * $q['quantity_requested'];
+            $total_nam = $q['nam_unit_price'] * $q['quantity_requested'];
+            
+            $stmt->bind_param("sssidddddssss", $q['company'], $q['category'], $q['item'], $q['quantity_requested'], $q['suppliers_price'], $total_actual, $q['nam_unit_price'], $total_nam, $income, $percent, $q['po_number'], $q['payment_term'], $q['remarks']);
+            
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to insert sale record.");
+            }
+            
+            // 2. Deduct Stock ONLY if it wasn't already deducted via 'Approve'
+            if ($q['status'] != 'Approved') {
+                $check = $conn->prepare("SELECT current_stock FROM products WHERE name = ?");
+                $check->bind_param("s", $q['item']);
+                $check->execute();
+                $stock = $check->get_result()->fetch_assoc();
                 
-                $stmt = $conn->prepare("INSERT INTO sales (date, company, category, item, quantity_requested, suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount, income, income_percent, po_number, payment_term, remarks, date_delivered, due_date) VALUES (CURRENT_DATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)");
-                
-                $total_actual = $q['suppliers_price'] * $q['quantity_requested'];
-                $total_nam = $q['nam_unit_price'] * $q['quantity_requested'];
-                
-                $stmt->bind_param("sssidddddssss", $q['company'], $q['category'], $q['item'], $q['quantity_requested'], $q['suppliers_price'], $total_actual, $q['nam_unit_price'], $total_nam, $income, $percent, $q['po_number'], $q['payment_term'], $q['remarks']);
-                
-                if (!$stmt->execute()) {
-                    throw new Exception("Failed to insert sale record.");
+                if (!$stock || $stock['current_stock'] < $q['quantity_requested']) {
+                    throw new Exception("Insufficient Stock");
                 }
-                
-                // Update stock safely
+
                 $updateStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
                 $updateStock->bind_param("is", $q['quantity_requested'], $q['item']);
                 if (!$updateStock->execute()) {
                     throw new Exception("Failed to deduct inventory.");
                 }
-
-                // Mark Quote as Converted
-                $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
-                
-                // COMMIT IF ALL SUCCEEDED
-                $conn->commit();
-                
-                logAction('Converted Quotation', "Converted quote for {$q['company']} to a sale (Item: {$q['item']})");
-                
-                $msg = "success";
-                
-            } catch (Exception $e) {
-                // ROLLBACK IF ANYTHING FAILED
-                $conn->rollback();
-                error_log($e->getMessage());
-                $msg = "error_db";
             }
-        } else {
-            $msg = "error_stock"; 
+
+            // 3. Mark Quote as Converted
+            $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
+            
+            // COMMIT IF ALL SUCCEEDED
+            $conn->commit();
+            
+            logAction('Converted Quotation', "Converted quote for {$q['company']} to a sale (Item: {$q['item']})");
+            
+            $msg = "success";
+            
+        } catch (Exception $e) {
+            // ROLLBACK IF ANYTHING FAILED
+            $conn->rollback();
+            error_log($e->getMessage());
+            $msg = ($e->getMessage() == "Insufficient Stock") ? "error_stock" : "error_db";
         }
     }
     header("Location: quotations.php?msg=$msg");
@@ -125,12 +188,17 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $n_price = floatval($_POST['edit_n_price']);
     $total = $qty * $n_price;
     
+    // NOTE: Editing an "Approved" quote's quantity would require stock adjustments.
+    // For simplicity and safety, we allow standard updates. If major edits are needed, delete and recreate.
     $stmt = $conn->prepare("UPDATE quotations SET quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
     $stmt->bind_param("idddi", $qty, $s_price, $n_price, $total, $id);
     $stmt->execute();
     header("Location: quotations.php?msg=edited");
     exit;
 }
+
+$conn = getDBConnection();
+$next_ref_default = getNextQuoteRef($conn);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -190,15 +258,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     </div>
                                     <div class="col-6">
                                         <label class="small text-muted fw-bold">Quote Reference</label>
-                                        <input type="text" id="quote_ref" class="form-control form-control-sm" required>
+                                        <input type="text" id="quote_ref" class="form-control form-control-sm" value="<?= $next_ref_default ?>" required>
                                     </div>
                                     <div class="col-12">
                                         <label class="small text-muted fw-bold">Client Company</label>
                                         <input type="text" id="company" class="form-control form-control-sm" placeholder="Client Name" required>
                                     </div>
                                     <div class="col-6">
-                                        <label class="small text-muted fw-bold">PO Number (Optional)</label>
-                                        <input type="text" id="po" class="form-control form-control-sm" placeholder="PO #">
+                                        <label class="small text-muted fw-bold">Client Inquiry Num</label>
+                                        <input type="text" id="po" class="form-control form-control-sm" placeholder="Inquiry #">
                                     </div>
                                     <div class="col-6">
                                         <label class="small text-muted fw-bold">Payment Terms</label>
@@ -275,17 +343,17 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                 
                 <?php if(isset($_GET['msg'])): ?>
                     <?php if($_GET['msg']=='error_stock'): ?>
-                        <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Cannot Finalize: <b>Insufficient Stock</b>.</div>
+                        <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Cannot Finalize/Approve: <b>Insufficient Stock</b>.</div>
                     <?php elseif($_GET['msg']=='error_db'): ?>
                         <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> System Error: Failed to process transaction.</div>
                     <?php elseif($_GET['msg']=='approved'): ?>
-                        <div class="alert alert-warning"><i class="fas fa-file-signature"></i> Quotation marked as Approved (Pending Signatures).</div>
+                        <div class="alert alert-warning"><i class="fas fa-file-signature"></i> Quotation Approved & Stock Deducted (Pending Signatures).</div>
                     <?php elseif($_GET['msg']=='success'): ?>
-                        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Sale Finalized and Stock Deducted!</div>
+                        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Sale Finalized Successfully!</div>
                     <?php elseif($_GET['msg']=='edited'): ?>
                         <div class="alert alert-info"><i class="fas fa-edit"></i> Quotation successfully updated.</div>
                     <?php elseif($_GET['msg']=='deleted'): ?>
-                        <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list.</div>
+                        <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list (and stock restored if approved).</div>
                     <?php elseif($_GET['msg']=='created'): ?>
                         <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created Successfully.</div>
                     <?php endif; ?>
@@ -311,6 +379,9 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                         </table>
                     </div>
                     <div class="card-footer bg-light d-flex justify-content-end gap-2 p-3">
+                        <button class="btn btn-outline-danger fw-bold px-3" onclick="clearQueue()" title="Clear Draft">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
                         <button class="btn btn-outline-dark fw-bold px-4" onclick="showPreviewNew()">
                             <i class="fas fa-search me-1"></i> Preview Formal Document
                         </button>
@@ -374,13 +445,23 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     <div class="d-flex justify-content-between align-items-center mb-3">
                                         <h6 class="text-primary fw-bold mb-0">
                                             <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
-                                            <button class="btn btn-sm btn-outline-dark ms-3 shadow-sm fw-bold" 
+                                            
+                                            <button class="btn btn-sm btn-outline-info ms-3 shadow-sm fw-bold" 
+                                                    onclick='batchBuyAgain(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>)' 
+                                                    title="Duplicate Entire Quotation to Draft">
+                                                <i class="fas fa-redo-alt me-1"></i> Batch Buy Again
+                                            </button>
+
+                                            <button class="btn btn-sm btn-outline-dark ms-2 shadow-sm fw-bold" 
                                                     onclick='printGroupedQuote(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>)' 
                                                     title="Print Formal Document">
                                                 <i class="fas fa-print me-1"></i> Print Formal Quote
                                             </button>
                                         </h6>
-                                        <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
+                                        <div class="text-end">
+                                            <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
+                                            <span class="badge border bg-light text-dark ms-2">Inquiry #: <?= $quotes[0]['po_number'] ?? 'N/A' ?></span>
+                                        </div>
                                     </div>
                                     
                                     <div class="table-responsive">
@@ -399,6 +480,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                     $status = $row['status'] ?: 'Pending';
                                                     $badge = 'secondary';
                                                     if ($status == 'Approved') $badge = 'warning text-dark';
+                                                    if ($status == 'Reserved') $badge = 'danger';
                                                     if ($status == 'Converted') $badge = 'success';
                                                     $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
                                                 ?>
@@ -412,6 +494,9 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                     <td class="text-center"><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
                                                     <td class="text-end pe-2">
                                                         <div class="d-flex justify-content-end gap-1">
+                                                            
+                                                            <button class="btn btn-sm btn-outline-info fw-bold" onclick='buyAgain(<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8") ?>)' title="Buy Again / Duplicate to Draft"><i class="fas fa-redo-alt"></i></button>
+
                                                             <?php if($status != 'Converted'): ?>
                                                                 <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
                                                                 
@@ -421,13 +506,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                                                 </form>
                                                             <?php endif; ?>
 
-                                                            <?php if($status == 'Pending'): ?>
-                                                                <form method="POST" onsubmit="return confirm('Mark as Approved?');" class="d-inline">
+                                                            <?php if($status == 'Pending' || $status == 'Reserved'): ?>
+                                                                <form method="POST" onsubmit="return confirm('Approve this item? This will DEDUCT stock.');" class="d-inline">
                                                                     <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm btn-warning fw-bold" title="Approve"><i class="fas fa-file-signature"></i></button>
+                                                                    <button class="btn btn-sm btn-warning fw-bold" title="Approve & Deduct Stock"><i class="fas fa-file-signature"></i></button>
                                                                 </form>
-                                                            <?php elseif($status == 'Approved'): ?>
-                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale? This will DEDUCT stock and record the sale.');" class="d-inline">
+                                                            <?php endif; ?>
+                                                            
+                                                            <?php if($status == 'Pending' || $status == 'Approved' || $status == 'Reserved'): ?>
+                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale?');" class="d-inline">
                                                                     <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
                                                                     <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i></button>
                                                                 </form>
@@ -539,10 +626,7 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     let quoteQueue = []; // Holds items for the current batch
 
     document.addEventListener("DOMContentLoaded", () => {
-        // Generate random Quote Ref on load
-        const rand = Math.floor(1000 + Math.random() * 9000);
-        const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'');
-        document.getElementById('quote_ref').value = `QTE-${dateStr}-${rand}`;
+        // Initialize from Database logic handles the reference number now
         
         fetch('get_all_products.php')
             .then(res => res.json())
@@ -573,6 +657,65 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
             document.getElementById('n_price').dispatchEvent(new Event('input'));
         }
     });
+
+    // --- BUY AGAIN FUNCTION (SINGLE ITEM) ---
+    function buyAgain(row) {
+        // Automatically populate the header if it's currently empty
+        if (!document.getElementById('company').value) {
+            document.getElementById('company').value = row.company;
+            document.getElementById('po').value = row.po_number || '';
+            document.getElementById('term').value = row.payment_term || '';
+            document.getElementById('remarks').value = row.remarks || '';
+        }
+
+        // Push the item to the draft queue
+        quoteQueue.push({
+            item: row.item,
+            quantity: parseFloat(row.quantity_requested) || 1,
+            s_price: parseFloat(row.suppliers_price) || 0,
+            n_price: parseFloat(row.nam_unit_price) || 0,
+            category: row.category || 'Uncategorized'
+        });
+
+        renderQueue();
+        document.getElementById('queueCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // --- BATCH BUY AGAIN FUNCTION (ENTIRE QUOTE) ---
+    function batchBuyAgain(quotesArray) {
+        if (!quotesArray || quotesArray.length === 0) return;
+        
+        const first = quotesArray[0];
+
+        // Automatically populate the header if it's currently empty
+        if (!document.getElementById('company').value) {
+            document.getElementById('company').value = first.company || '';
+            document.getElementById('po').value = first.po_number || '';
+            document.getElementById('term').value = first.payment_term || '';
+            document.getElementById('remarks').value = first.remarks || '';
+        }
+
+        // Loop through all items and push them to the draft queue
+        quotesArray.forEach(row => {
+            quoteQueue.push({
+                item: row.item,
+                quantity: parseFloat(row.quantity_requested) || 1,
+                s_price: parseFloat(row.suppliers_price) || 0,
+                n_price: parseFloat(row.nam_unit_price) || 0,
+                category: row.category || 'Uncategorized'
+            });
+        });
+
+        renderQueue();
+        document.getElementById('queueCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function clearQueue() {
+        if(confirm("Are you sure you want to clear your current Quote Draft?")) {
+            quoteQueue = [];
+            renderQueue();
+        }
+    }
 
     // --- BATCH QUEUE LOGIC ---
     function addToQuote() {
@@ -762,6 +905,11 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
 
     // --- FORMAL DOCUMENT PRINT RENDERING ---
     function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
+        
+        // --- VAT CALCULATION ---
+        let vatable = grandTotal / 1.12;
+        let vatAmt = grandTotal - vatable;
+
         const html = `
             <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
                 
@@ -833,6 +981,10 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                                     <th class="p-0 pb-1">VEHICLE NO:</th>
                                     <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Vehicle No]"></td>
                                 </tr>
+                                <tr>
+                                    <th class="p-0 pb-1 text-muted">INQUIRY REF #:</th>
+                                    <td class="p-0 pb-1 text-muted"><input type="text" class="print-input w-100" value="${po}"></td>
+                                </tr>
                             </table>
                         </div>
                     </div>
@@ -854,15 +1006,15 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
                     </tbody>
                     <tfoot class="border-dark">
                         <tr>
-                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">SUBTOTAL</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                         <tr>
-                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VAT:</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0"><input type="text" class="print-input text-end w-100 fw-bold m-0 p-0" value="0.00"></td>
+                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VAT (12%):</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0"><input type="text" class="print-input text-end w-100 fw-bold m-0 p-0" value="${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}"></td>
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                            <td colspan="5" class="text-end py-2 fw-bolder pe-3 fs-6">TOTAL AMOUNT</td>
+                            <td colspan="5" class="text-end py-2 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
                             <td class="text-end py-2 fs-6 fw-bolder">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
