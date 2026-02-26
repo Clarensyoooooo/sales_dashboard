@@ -124,36 +124,54 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                             $importLogs[] = "<span class='text-danger'>[Row $row]</span> Failed to insert $item: " . $stmt->error;
                         }
                         $stmt->close();
+                    } else {
+                        $importLogs[] = "<span class='text-danger'>[Row $row]</span> SQL Prepare Error (Sales): " . $conn->error;
                     }
                 }
             }
             
-            // LOGIC 2: PRICES IMPORT
+            // LOGIC 2: PRICES IMPORT (UPDATED FIX FOR ACCURATE CSV COLUMNS)
             elseif ($importType == 'prices') {
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
-                    if ($row <= 1 || empty($data[1])) continue; 
+                    // Skip the first 2 rows (Title and Headers) or if Product Name is empty
+                    if ($row <= 2 || empty(trim($data[0]))) continue; 
 
-                    $category = $data[0] ?? 'General';
-                    $name = $data[1] ?? '';
-                    $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
-                    $supplier_price = $cleanPrice($data[2] ?? 0);
-                    $unit_price = $cleanPrice($data[3] ?? 0);
+                    $name = trim($data[0]);
+                    $category_code = trim($data[1] ?? 'General');
+                    if (empty($category_code)) $category_code = 'General';
                     
-                    $sql = "INSERT INTO products (category, name, supplier_price, unit_price) 
-                            VALUES (?, ?, ?, ?) 
+                    $unit = trim($data[2] ?? '');
+                    $supplier = trim($data[3] ?? '');
+
+                    $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
+                    
+                    // Mapping columns 4 and 5 based on your CSV structure
+                    $supplier_price = $cleanPrice($data[4] ?? 0);
+                    $nam_price = $cleanPrice($data[5] ?? 0);
+                    
+                    $sql = "INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price) 
+                            VALUES (?, ?, ?, ?, ?, ?) 
                             ON DUPLICATE KEY UPDATE 
+                            category_code = VALUES(category_code),
+                            unit = VALUES(unit),
+                            supplier = VALUES(supplier),
                             supplier_price = VALUES(supplier_price), 
-                            unit_price = VALUES(unit_price)";
+                            nam_price = VALUES(nam_price)";
                             
                     $stmt = $conn->prepare($sql);
+                    
                     if ($stmt) {
-                        $stmt->bind_param("ssdd", $category, $name, $supplier_price, $unit_price);
+                        $stmt->bind_param("ssssdd", $name, $category_code, $unit, $supplier, $supplier_price, $nam_price);
                         if ($stmt->execute()) {
                             $imported++;
-                            $importLogs[] = "<span class='text-primary'>[Row $row]</span> Updated Inventory: <strong>$name</strong> (SRP: ₱$unit_price)";
+                            $importLogs[] = "<span class='text-primary'>[Row $row]</span> Updated Inventory: <strong>$name</strong> (SRP: ₱$nam_price)";
+                        } else {
+                            $importLogs[] = "<span class='text-danger'>[Row $row]</span> Error executing update for $name: " . $stmt->error;
                         }
                         $stmt->close();
+                    } else {
+                        $importLogs[] = "<span class='text-danger'>[Row $row]</span> SQL Prepare Error (Products): " . $conn->error;
                     }
                 }
             }
