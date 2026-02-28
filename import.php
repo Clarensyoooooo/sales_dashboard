@@ -130,16 +130,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                 }
             }
             
-            // LOGIC 2: PRICES IMPORT (UPDATED FIX FOR ACCURATE CSV COLUMNS)
+            // LOGIC 2: PRICES IMPORT (UPDATED FIX FOR ACCURATE CSV COLUMNS AND CATEGORY MAPPING)
             elseif ($importType == 'prices') {
+                
+                // MAPPING: CSV Code -> Database/Form Category
+                $categoryMap = [
+                    'CM' => 'CLEANING MATERIALS',
+                    'CO' => 'CONSUMABLES',
+                    'CU' => 'COMPANY UNIFORM',
+                    'FF' => 'OFFICE FURNITURE & FIXTURES',
+                    'MA' => 'MATERIALS',
+                    'MD' => 'MEDICINE',
+                    'OS' => 'OFFICE SUPPLIES',
+                    'PPE' => 'PPE',
+                    'TE' => 'OFFICE TOOLS AND EQUIPMENT'
+                ];
+
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
                     // Skip the first 2 rows (Title and Headers) or if Product Name is empty
                     if ($row <= 2 || empty(trim($data[0]))) continue; 
 
                     $name = trim($data[0]);
-                    $category_code = trim($data[1] ?? 'General');
-                    if (empty($category_code)) $category_code = 'General';
+                    
+                    // GRAB RAW CATEGORY AND MAP IT
+                    $raw_category = trim($data[1] ?? 'General');
+                    if (empty($raw_category)) $raw_category = 'General';
+                    
+                    // TRANSLATE ABBREVIATION TO FULL NAME
+                    $category_code = isset($categoryMap[$raw_category]) ? $categoryMap[$raw_category] : $raw_category;
                     
                     $unit = trim($data[2] ?? '');
                     $supplier = trim($data[3] ?? '');

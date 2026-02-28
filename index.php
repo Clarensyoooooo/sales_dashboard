@@ -176,9 +176,25 @@
         <div class="row g-4 mb-4">
             <div class="col-lg-8">
                 <div class="chart-card">
-                    <div class="chart-title">
+                   <div class="chart-title mb-2">
                         <span><i class="fas fa-building text-info me-2"></i>Company Performance</span>
-                        <small class="text-muted fw-normal" style="font-size: 11px;">Click bar to filter</small>
+                        <div>
+                            <small class="text-muted fw-normal me-2" style="font-size: 11px;">Click bar to filter</small>
+                            <?php if($_SESSION['role_id'] == 1): ?>
+                            <a href="assignments.php" class="btn btn-sm btn-outline-secondary py-0 px-2 shadow-sm" title="Assign Account Managers" style="font-size: 11px;">
+                                <i class="fas fa-cog"></i> Setup
+                            </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex flex-wrap gap-2 mb-3" style="font-size: 11px;">
+                        <span class="badge rounded-pill" style="background-color: #ec4899;">Ms. Anne</span>
+                        <span class="badge rounded-pill" style="background-color: #ef4444;">Ms. Cherry</span>
+                        <span class="badge rounded-pill" style="background-color: #8b5cf6;">Ms. Glenda</span>
+                        <span class="badge rounded-pill" style="background-color: #10b981;">Ms. Ivy</span>
+                        <span class="badge rounded-pill" style="background-color: #f59e0b;">Ms. Ally</span>
+                        <span class="badge rounded-pill text-dark" style="background-color: #cbd5e1;">Unassigned</span>
                     </div>
                     <div class="scrollable-chart-wrapper">
                         <div id="companyChartContainer">
@@ -627,53 +643,49 @@
 
     function renderCompanyChart(data) {
         const container = document.getElementById('companyChartContainer');
-        const minWidth = Math.max(800, data.length * 60); 
+        const minWidth = Math.max(800, data.length * 60);
         container.style.width = minWidth + 'px';
-        container.style.height = '400px'; 
+        container.style.height = '400px';
 
         const ctx = document.getElementById('companyChart').getContext('2d');
         
-        // 1. Fetch current target values
+        // --- NEW EMPLOYEE COLOR MAPPING ---
+        const employeeColors = {
+            'Ms. Anne': '#ec4899', // Pink
+            'Ms. Cherry': '#ef4444', // Red
+            'Ms. Glenda': '#8b5cf6', // Purple
+            'Ms. Ivy': '#10b981', // Green
+            'Ms. Ally': '#f59e0b', // Orange
+            'Unassigned': '#cbd5e1' // Gray
+        };
+
+        // Assign colors dynamically based on the employee data
+        const backgroundColors = data.map(d => employeeColors[d.employee] || employeeColors['Unassigned']);
+
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
         const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
 
         if (charts.company) charts.company.destroy();
-
         charts.company = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => d.company),
                 datasets: [
-                    // Max Target Line
-                    { 
-                        type: 'line', 
-                        label: 'Max Target', 
-                        data: Array(data.length).fill(maxTarget), 
-                        borderColor: colors.success, 
-                        borderWidth: 2, 
-                        borderDash: [6, 4], 
-                        pointRadius: 0,
-                        datalabels: { display: false }, // Hide data labels for the line
-                        order: 0 
+                    {
+                        type: 'line', label: 'Max Target',
+                        data: Array(data.length).fill(maxTarget),
+                        borderColor: colors.success, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, datalabels: { display: false }, order: 0
                     },
-                    // Min Target Line
-                    { 
-                        type: 'line', 
-                        label: 'Min Target', 
-                        data: Array(data.length).fill(minTarget), 
-                        borderColor: colors.danger, 
-                        borderWidth: 2, 
-                        borderDash: [2, 2], 
-                        pointRadius: 0,
-                        datalabels: { display: false }, // Hide data labels for the line
-                        order: 1 
+                    {
+                        type: 'line', label: 'Min Target',
+                        data: Array(data.length).fill(minTarget),
+                        borderColor: colors.danger, borderWidth: 2, borderDash: [2, 2], pointRadius: 0, datalabels: { display: false }, order: 1
                     },
-                    // Company Sales Bars
-                    { 
+                    {
                         type: 'bar',
-                        label: 'Total Sales', 
-                        data: data.map(d => d.total_sales), 
-                        backgroundColor: colors.palette, 
+                        label: 'Total Sales',
+                        data: data.map(d => d.total_sales),
+                        backgroundColor: backgroundColors, // <--- INJECTED DYNAMIC COLORS HERE
                         borderRadius: 3,
                         barPercentage: 0.6,
                         order: 2
@@ -681,13 +693,24 @@
                 ]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { 
-                    // 2. Enable legend to show what the lines mean
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
                     legend: { 
-                        display: true, 
-                        position: 'bottom', 
-                        labels: { usePointStyle: true, boxWidth: 8, padding: 15 } 
+                        display: true, position: 'bottom', 
+                        labels: { 
+                            usePointStyle: true, boxWidth: 8, padding: 15,
+                            // Hide the general "Total Sales" box from legend since we added custom ones
+                            filter: function(item, chart) { return item.text !== 'Total Sales'; }
+                        } 
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterLabel: function(context) {
+                                // Show Account manager on Hover
+                                return 'Account Manager: ' + data[context.dataIndex].employee;
+                            }
+                        }
                     },
                     datalabels: {
                         color: '#444', anchor: 'end', align: 'end', offset: -5,
@@ -695,9 +718,9 @@
                         font: { weight: 'bold', size: 10 }
                     }
                 },
-                scales: { 
-                    x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } }, 
-                    y: { display: true, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, beginAtZero: true, ticks: { callback: function(value) { return formatLarge(value); } } } 
+                scales: {
+                    x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } },
+                    y: { display: true, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, beginAtZero: true, ticks: { callback: function(value) { return formatLarge(value); } } }
                 },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {

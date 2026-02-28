@@ -222,9 +222,11 @@ $next_ref_default = getNextQuoteRef($conn);
             #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
             .print-input { border-bottom: none !important; }
             .print-input::-webkit-input-placeholder { color: transparent; }
+            /* Hide the spinner arrows on number inputs during print */
+            input[type=number]::-webkit-inner-spin-button, 
+            input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            /* Force precise margins for A4 printing */
             @page { size: A4 portrait; margin: 15mm; }
         }
         
@@ -607,7 +609,6 @@ $next_ref_default = getNextQuoteRef($conn);
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body bg-secondary bg-opacity-10 p-4">
-                    <p class="text-center text-muted small mb-2"><i class="fas fa-info-circle me-1"></i> You can click the names, addresses, and units in the document below to edit them before printing.</p>
                     <div id="receiptContent" class="preview-box p-4 p-md-5 mx-auto" style="max-width: 850px; min-height: 1000px;"></div>
                 </div>
                 <div class="modal-footer bg-white">
@@ -626,8 +627,6 @@ $next_ref_default = getNextQuoteRef($conn);
     let quoteQueue = []; // Holds items for the current batch
 
     document.addEventListener("DOMContentLoaded", () => {
-        // Initialize from Database logic handles the reference number now
-        
         fetch('get_all_products.php')
             .then(res => res.json())
             .then(data => {
@@ -660,7 +659,6 @@ $next_ref_default = getNextQuoteRef($conn);
 
     // --- BUY AGAIN FUNCTION (SINGLE ITEM) ---
     function buyAgain(row) {
-        // Automatically populate the header if it's currently empty
         if (!document.getElementById('company').value) {
             document.getElementById('company').value = row.company;
             document.getElementById('po').value = row.po_number || '';
@@ -668,7 +666,6 @@ $next_ref_default = getNextQuoteRef($conn);
             document.getElementById('remarks').value = row.remarks || '';
         }
 
-        // Push the item to the draft queue
         quoteQueue.push({
             item: row.item,
             quantity: parseFloat(row.quantity_requested) || 1,
@@ -687,7 +684,6 @@ $next_ref_default = getNextQuoteRef($conn);
         
         const first = quotesArray[0];
 
-        // Automatically populate the header if it's currently empty
         if (!document.getElementById('company').value) {
             document.getElementById('company').value = first.company || '';
             document.getElementById('po').value = first.po_number || '';
@@ -695,7 +691,6 @@ $next_ref_default = getNextQuoteRef($conn);
             document.getElementById('remarks').value = first.remarks || '';
         }
 
-        // Loop through all items and push them to the draft queue
         quotesArray.forEach(row => {
             quoteQueue.push({
                 item: row.item,
@@ -738,7 +733,6 @@ $next_ref_default = getNextQuoteRef($conn);
             category: category
         });
 
-        // Reset Item Fields Only (Keep Header Info intact)
         document.getElementById('itemInput').value = '';
         document.getElementById('quantity').value = '1';
         document.getElementById('s_price').value = '';
@@ -791,7 +785,6 @@ $next_ref_default = getNextQuoteRef($conn);
     async function saveQuoteBatch() {
         if (quoteQueue.length === 0) return;
 
-        // Validation for header
         const date = document.getElementById('date').value;
         const ref = document.getElementById('quote_ref').value;
         const company = document.getElementById('company').value;
@@ -903,16 +896,72 @@ $next_ref_default = getNextQuoteRef($conn);
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
+    // --- DYNAMIC PREVIEW RECALCULATION ---
+    function recalcPreview() {
+        let rows = document.querySelectorAll('#previewTbody tr');
+        let rawTotal = 0;
+        
+        rows.forEach(row => {
+            let qtyInput = row.querySelector('.prev-qty');
+            let priceInput = row.querySelector('.prev-price');
+            
+            if (qtyInput && priceInput) {
+                let qty = parseFloat(qtyInput.value) || 0;
+                let price = parseFloat(priceInput.value) || 0;
+                let rowTotal = qty * price;
+                
+                row.querySelector('.prev-total').innerText = rowTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
+                rawTotal += rowTotal;
+            }
+        });
+        
+        let vatType = document.getElementById('prevVatType').value;
+        let vatable = 0;
+        let vatAmt = 0;
+        let grandTotal = 0;
+        let vatLabel = 'VAT (12%):';
+        
+        if (vatType === 'inclusive') {
+            vatable = rawTotal / 1.12;
+            vatAmt = rawTotal - vatable;
+            grandTotal = rawTotal;
+        } else if (vatType === 'exclusive') {
+            vatable = rawTotal;
+            vatAmt = rawTotal * 0.12;
+            grandTotal = rawTotal + vatAmt;
+        } else {
+            vatable = rawTotal;
+            vatAmt = 0;
+            grandTotal = rawTotal;
+            vatLabel = 'VAT (0%):';
+        }
+        
+        document.getElementById('vatLabel').innerText = vatLabel;
+        document.getElementById('prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('prevGrandTotal').innerText = '₱' + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
+    }
+
     // --- FORMAL DOCUMENT PRINT RENDERING ---
     function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
         
-        // --- VAT CALCULATION ---
         let vatable = grandTotal / 1.12;
         let vatAmt = grandTotal - vatable;
 
         const html = `
+            <div class="d-print-none alert alert-info py-2 d-flex justify-content-between align-items-center mb-4 border border-info shadow-sm">
+                <span class="small fw-bold text-dark"><i class="fas fa-magic me-1"></i> Live Calculations Active: You can edit Quantities and Prices directly below.</span>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="small fw-bold mb-0 text-dark text-nowrap">VAT Mode:</label>
+                    <select id="prevVatType" class="form-select form-select-sm fw-bold border-info text-primary" style="width: 180px;" onchange="recalcPreview()">
+                        <option value="inclusive">VAT Inclusive (12%)</option>
+                        <option value="exclusive">VAT Exclusive (+12%)</option>
+                        <option value="exempt">VAT Exempt (0%)</option>
+                    </select>
+                </div>
+            </div>
+
             <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
-                
                 <div class="row mb-4">
                     <div class="col-8">
                         <h2 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px;">NAM BUILDERS AND SUPPLY CORP.</h2>
@@ -1001,21 +1050,21 @@ $next_ref_default = getNextQuoteRef($conn);
                             <th width="15%" class="py-2">TOTAL AMOUNT</th>
                         </tr>
                     </thead>
-                    <tbody class="border-dark align-middle">
+                    <tbody id="previewTbody" class="border-dark align-middle">
                         ${tbodyHtml}
                     </tbody>
                     <tfoot class="border-dark">
                         <tr>
                             <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                         <tr>
-                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VAT (12%):</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0"><input type="text" class="print-input text-end w-100 fw-bold m-0 p-0" value="${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}"></td>
+                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
+                            <td class="text-end py-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <td colspan="5" class="text-end py-2 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
-                            <td class="text-end py-2 fs-6 fw-bolder">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end py-2 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -1113,11 +1162,11 @@ $next_ref_default = getNextQuoteRef($conn);
             tbodyHtml += `
                 <tr>
                     <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold">${q.item}</td>
+                    <td class="py-2 fw-bold"><input type="text" class="print-input w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
                     <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2">${q.quantity}</td>
-                    <td class="text-end py-2">${parseFloat(q.n_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end py-2">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-center py-2"><input type="number" class="print-input text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
@@ -1142,11 +1191,11 @@ $next_ref_default = getNextQuoteRef($conn);
             tbody += `
                 <tr>
                     <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold">${q.item}</td>
+                    <td class="py-2 fw-bold"><input type="text" class="print-input w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
                     <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2">${q.quantity_requested}</td>
-                    <td class="text-end py-2">${parseFloat(q.nam_unit_price).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end py-2">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-center py-2"><input type="number" class="print-input text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });

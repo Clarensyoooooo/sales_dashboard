@@ -1,9 +1,23 @@
 <?php
-// api.php - Updated for Revenue-based Payment Terms
+// api.php - Updated for Revenue-based Payment Terms & Account Manager Tracking
 header('Content-Type: application/json');
 require_once 'config.php';
 
 $conn = getDBConnection();
+
+// AUTO-CREATE ASSIGNMENTS TABLE IF IT DOESN'T EXIST
+$conn->query("CREATE TABLE IF NOT EXISTS company_assignments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    company_name VARCHAR(255) UNIQUE,
+    employee_name VARCHAR(100)
+)");
+
+// FETCH CURRENT ASSIGNMENTS
+$assignments = [];
+$res = $conn->query("SELECT company_name, employee_name FROM company_assignments");
+if ($res) {
+    while($r = $res->fetch_assoc()) $assignments[$r['company_name']] = $r['employee_name'];
+}
 
 // --- Helper ---
 function executeQuery($conn, $sql, $types = "", $params = []) {
@@ -137,12 +151,17 @@ while($row = $result->fetch_assoc()) {
     $supplier_costs[] = ['supplier' => $row['supplier'], 'cost' => floatval($row['total_cost'])];
 }
 
-// --- 7. Company Sales ---
+// --- 7. Company Sales (WITH EMPLOYEE DATA MAPPED) ---
 $company_sales = [];
 $sql = "SELECT company, SUM(total_nam_amount) as total_sales FROM sales $where_sql AND company != '' GROUP BY company ORDER BY total_sales DESC";
 $result = executeQuery($conn, $sql, $types, $params);
 while ($row = $result->fetch_assoc()) {
-    $company_sales[] = ['company' => $row['company'], 'total_sales' => floatval($row['total_sales'])];
+    $emp = isset($assignments[$row['company']]) ? $assignments[$row['company']] : 'Unassigned';
+    $company_sales[] = [
+        'company' => $row['company'], 
+        'total_sales' => floatval($row['total_sales']),
+        'employee' => $emp
+    ];
 }
 
 // --- 8. Category Matrix ---
