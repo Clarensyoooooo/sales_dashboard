@@ -189,11 +189,12 @@
                     </div>
                     
                     <div class="d-flex flex-wrap gap-2 mb-3" style="font-size: 11px;">
-                        <span class="badge rounded-pill" style="background-color: #ec4899;">Ms. Anne</span>
-                        <span class="badge rounded-pill" style="background-color: #ef4444;">Ms. Cherry</span>
-                        <span class="badge rounded-pill" style="background-color: #8b5cf6;">Ms. Glenda</span>
-                        <span class="badge rounded-pill" style="background-color: #10b981;">Ms. Ivy</span>
-                        <span class="badge rounded-pill" style="background-color: #f59e0b;">Ms. Ally</span>
+                        <span class="badge rounded-pill text-white" style="background-color: #419CA1;">Ms. Anne</span>
+                        <span class="badge rounded-pill text-dark" style="background-color: #AFD5F7;">Ms. Cherry</span>
+                        <span class="badge rounded-pill text-white" style="background-color: green;">Ms. Glenda</span>
+                        <span class="badge rounded-pill text-white" style="background-color: purple;">Ms. Ivy</span>
+                        <span class="badge rounded-pill text-white" style="background-color: blue;">Ms. Ally</span>
+                        <span class="badge rounded-pill text-white" style="background-color: #FC0FC0;">Ms. Hannah</span>
                         <span class="badge rounded-pill text-dark" style="background-color: #cbd5e1;">Unassigned</span>
                     </div>
                     <div class="scrollable-chart-wrapper">
@@ -396,18 +397,46 @@
     async function fetchSalesData() {
         const period = document.getElementById('periodFilter').value;
         const now = new Date();
-        const today = now.toISOString().split('T')[0];
+        
+        // --- NEW LOCAL DATE FIX ---
+        // toISOString() uses UTC, which pushes Philippine midnight to 4PM the previous day.
+        // This helper safely forces the exact local YYYY-MM-DD.
+        const toLocalYYYYMMDD = (d) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+
+        const today = toLocalYYYYMMDD(now);
         let start = '', end = today, groupBy = 'day';
 
-        if (period === 'today') start = today;
-        else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); start = d.toISOString().split('T')[0]; }
-        else if (period === 'month') start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-        else if (period === 'quarter') { start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; groupBy = 'quarter'; }
-        else if (period === 'year') { start = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; groupBy = 'month'; }
-        else if (period === 'custom_month') {
+        if (period === 'today') {
+            start = today;
+        } else if (period === 'week') { 
+            const d = new Date(now); 
+            d.setDate(d.getDate() - d.getDay()); 
+            start = toLocalYYYYMMDD(d); 
+        } else if (period === 'month') { 
+            // 1st of the current month local time
+            start = toLocalYYYYMMDD(new Date(now.getFullYear(), now.getMonth(), 1)); 
+        } else if (period === 'quarter') { 
+            start = toLocalYYYYMMDD(new Date(now.getFullYear(), 0, 1)); 
+            groupBy = 'quarter'; 
+        } else if (period === 'year') { 
+            start = toLocalYYYYMMDD(new Date(now.getFullYear(), 0, 1)); 
+            groupBy = 'month'; 
+        } else if (period === 'custom_month') {
             const val = document.getElementById('monthPicker').value;
-            if (val) { const [y, m] = val.split('-'); start = `${y}-${m}-01`; end = new Date(y, m, 0).toISOString().split('T')[0]; }
-        } else groupBy = 'year';
+            if (val) { 
+                const [y, m] = val.split('-'); 
+                start = `${y}-${m}-01`; 
+                // Passing 0 as the day dynamically grabs the exact last day of that specific month locally
+                end = toLocalYYYYMMDD(new Date(y, m, 0)); 
+            }
+        } else {
+            groupBy = 'year';
+        }
 
         let url = `api.php?start_date=${start}&end_date=${end}&group_by=${groupBy}`;
         if(activeDrills.company) url += `&company=${encodeURIComponent(activeDrills.company)}`;
@@ -651,11 +680,12 @@
         
         // --- NEW EMPLOYEE COLOR MAPPING ---
         const employeeColors = {
-            'Ms. Anne': '#ec4899', // Pink
-            'Ms. Cherry': '#ef4444', // Red
-            'Ms. Glenda': '#8b5cf6', // Purple
-            'Ms. Ivy': '#10b981', // Green
-            'Ms. Ally': '#f59e0b', // Orange
+            'Ms. Anne': '#419CA1', // Teal
+            'Ms. Cherry': '#AFD5F7', // Light Blue
+            'Ms. Glenda': 'green', // Green
+            'Ms. Ivy': 'purple', // Purple
+            'Ms. Ally': 'blue', // Blue
+            'Ms. Hannah': '#FC0FC0', // Hot Pink
             'Unassigned': '#cbd5e1' // Gray
         };
 

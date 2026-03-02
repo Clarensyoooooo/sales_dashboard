@@ -179,6 +179,20 @@ if (isset($_POST['convert_id'])) {
     exit;
 }
 
+// --- 4. TOGGLE RESERVE STATUS ---
+if (isset($_POST['toggle_reserve_id'])) {
+    $r_id = intval($_POST['toggle_reserve_id']);
+    $conn = getDBConnection();
+    
+    $q = $conn->query("SELECT status FROM quotations WHERE id = $r_id")->fetch_assoc();
+    if ($q && ($q['status'] == 'Pending' || $q['status'] == 'Reserved')) {
+        $new_status = ($q['status'] == 'Reserved') ? 'Pending' : 'Reserved';
+        $conn->query("UPDATE quotations SET status = '$new_status' WHERE id = $r_id");
+    }
+    header("Location: quotations.php?msg=reserved_toggled");
+    exit;
+}
+
 // --- 5. EDIT QUOTE ---
 if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $conn = getDBConnection();
@@ -199,6 +213,51 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
 
 $conn = getDBConnection();
 $next_ref_default = getNextQuoteRef($conn);
+
+// --- PRE-FILL COMPANY DATA ---
+$clientData = [];
+
+// 1. Fetch from past quotations (to get previous quote remarks/po/terms)
+$resQuotes = $conn->query("SELECT company, po_number, payment_term, remarks FROM quotations WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
+if ($resQuotes) {
+    while($row = $resQuotes->fetch_assoc()) {
+        $comp = trim($row['company']);
+        if (!isset($clientData[$comp])) {
+            $clientData[$comp] = [
+                'po' => trim($row['po_number'] ?? ''),
+                'term' => trim($row['payment_term'] ?? ''),
+                'remarks' => trim($row['remarks'] ?? '')
+            ];
+        }
+    }
+}
+
+// 2. Fetch from past sales (to expand the list of known companies and their standard terms)
+$resSales = $conn->query("SELECT company, payment_term FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
+if ($resSales) {
+    while($row = $resSales->fetch_assoc()) {
+        $comp = trim($row['company']);
+        if (!isset($clientData[$comp])) {
+            $clientData[$comp] = [
+                'po' => '',
+                'term' => trim($row['payment_term'] ?? ''),
+                'remarks' => ''
+            ];
+        }
+    }
+}
+ksort($clientData); // Alphabetize the client list
+
+
+// --- FETCH RESERVED QUANTITIES PER ITEM ---
+$reservedData = [];
+$resReserved = $conn->query("SELECT item, SUM(quantity_requested) as total_reserved FROM quotations WHERE status = 'Reserved' GROUP BY item");
+if ($resReserved) {
+    while ($r = $resReserved->fetch_assoc()) {
+        $reservedData[$r['item']] = (int)$r['total_reserved'];
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -216,11 +275,16 @@ $next_ref_default = getNextQuoteRef($conn);
         .print-input:focus { border-bottom: 1px solid #0d6efd; }
         .preview-box { border: 1px solid #dee2e6; background: #fff; padding: 0; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
 
+        /* Highlight editable inline inputs in preview (Turns black when printed) */
+        .inline-edit { color: #0d6efd; cursor: pointer; }
+        .inline-edit:focus { color: #000; background-color: #f8f9fa; border-bottom: 1px solid #0d6efd !important; }
+
         /* Print Specific CSS */
         @media print {
             body > :not(#printContainer) { display: none !important; }
             #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
-            .print-input { border-bottom: none !important; }
+            .print-input { border-bottom: none !important; color: #000 !important; }
+            .inline-edit { color: #000 !important; } 
             .print-input::-webkit-input-placeholder { color: transparent; }
             /* Hide the spinner arrows on number inputs during print */
             input[type=number]::-webkit-inner-spin-button, 
@@ -262,10 +326,17 @@ $next_ref_default = getNextQuoteRef($conn);
                                         <label class="small text-muted fw-bold">Quote Reference</label>
                                         <input type="text" id="quote_ref" class="form-control form-control-sm" value="<?= $next_ref_default ?>" required>
                                     </div>
+                                    
                                     <div class="col-12">
                                         <label class="small text-muted fw-bold">Client Company</label>
-                                        <input type="text" id="company" class="form-control form-control-sm" placeholder="Client Name" required>
+                                        <input type="text" id="company" class="form-control form-control-sm" placeholder="Search Client..." list="companyList" required autocomplete="off">
+                                        <datalist id="companyList">
+                                            <?php foreach(array_keys($clientData) as $comp): ?>
+                                                <option value="<?= htmlspecialchars($comp); ?>">
+                                            <?php endforeach; ?>
+                                        </datalist>
                                     </div>
+
                                     <div class="col-6">
                                         <label class="small text-muted fw-bold">Client Inquiry Num</label>
                                         <input type="text" id="po" class="form-control form-control-sm" placeholder="Inquiry #">
@@ -291,6 +362,25 @@ $next_ref_default = getNextQuoteRef($conn);
                                     <div class="col-12">
                                         <label class="small text-muted fw-bold">Quantity</label>
                                         <input type="number" id="quantity" class="form-control form-control-sm" placeholder="Qty" value="1" min="1">
+                                        
+                                        <div id="stockTracker" class="mt-2 p-2 bg-white border rounded border-info-subtle" style="display: none; font-size: 0.75rem;">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <span class="text-muted">On-Hand Stock:</span>
+                                                <span class="fw-bold text-dark" id="infoStock">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <span class="text-danger">Currently Reserved:</span>
+                                                <span class="fw-bold text-danger" id="infoReserved">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-1 border-bottom pb-1">
+                                                <span class="text-success">True Available:</span>
+                                                <span class="fw-bold text-success" id="infoAvailable">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-1">
+                                                <span class="text-primary fw-bold">Left After This Quote:</span>
+                                                <span class="fw-bold text-primary" id="infoLeft">0</span>
+                                            </div>
+                                        </div>
                                     </div>
                                     
                                     <div class="col-12 mt-3">
@@ -358,6 +448,8 @@ $next_ref_default = getNextQuoteRef($conn);
                         <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list (and stock restored if approved).</div>
                     <?php elseif($_GET['msg']=='created'): ?>
                         <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created Successfully.</div>
+                    <?php elseif($_GET['msg']=='reserved_toggled'): ?>
+                        <div class="alert alert-info"><i class="fas fa-bookmark"></i> Item reservation status successfully updated.</div>
                     <?php endif; ?>
                 <?php endif; ?>
 
@@ -387,8 +479,11 @@ $next_ref_default = getNextQuoteRef($conn);
                         <button class="btn btn-outline-dark fw-bold px-4" onclick="showPreviewNew()">
                             <i class="fas fa-search me-1"></i> Preview Formal Document
                         </button>
-                        <button class="btn btn-primary fw-bold px-4" onclick="saveQuoteBatch()">
-                            <i class="fas fa-save me-1"></i> Save Entire Quotation
+                        <button class="btn btn-danger fw-bold px-4" onclick="saveQuoteBatch('Reserved')">
+                            <i class="fas fa-bookmark me-1"></i> Save & Reserve
+                        </button>
+                        <button class="btn btn-primary fw-bold px-4" onclick="saveQuoteBatch('Pending')">
+                            <i class="fas fa-save me-1"></i> Save Draft
                         </button>
                     </div>
                 </div>
@@ -509,6 +604,13 @@ $next_ref_default = getNextQuoteRef($conn);
                                                             <?php endif; ?>
 
                                                             <?php if($status == 'Pending' || $status == 'Reserved'): ?>
+                                                                <form method="POST" class="d-inline">
+                                                                    <input type="hidden" name="toggle_reserve_id" value="<?= $row['id'] ?>">
+                                                                    <button class="btn btn-sm <?= $status == 'Reserved' ? 'btn-danger' : 'btn-outline-danger' ?> fw-bold" title="<?= $status == 'Reserved' ? 'Remove Reservation' : 'Reserve Item' ?>">
+                                                                        <i class="fas fa-bookmark"></i>
+                                                                    </button>
+                                                                </form>
+                                                                
                                                                 <form method="POST" onsubmit="return confirm('Approve this item? This will DEDUCT stock.');" class="d-inline">
                                                                     <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
                                                                     <button class="btn btn-sm btn-warning fw-bold" title="Approve & Deduct Stock"><i class="fas fa-file-signature"></i></button>
@@ -625,6 +727,10 @@ $next_ref_default = getNextQuoteRef($conn);
     <script>
     let productMap = new Map();
     let quoteQueue = []; // Holds items for the current batch
+    
+    // Pass PHP client and reserved data to Javascript
+    const clientData = <?php echo json_encode($clientData); ?>;
+    const reservedData = <?php echo json_encode($reservedData); ?>;
 
     document.addEventListener("DOMContentLoaded", () => {
         fetch('get_all_products.php')
@@ -635,7 +741,13 @@ $next_ref_default = getNextQuoteRef($conn);
                     productMap.set(p.name, p);
                     const opt = document.createElement('option');
                     opt.value = p.name;
-                    opt.label = `Stock: ${p.current_stock} | ₱${p.nam_price}`;
+                    
+                    const stock = parseInt(p.current_stock) || 0;
+                    const reserved = reservedData[p.name] || 0;
+                    const available = stock - reserved;
+                    
+                    // Added Available & Reserved to the search list label
+                    opt.label = `Avail: ${available} (Res: ${reserved}) | ₱${p.nam_price}`;
                     dl.appendChild(opt);
                 });
             });
@@ -645,15 +757,70 @@ $next_ref_default = getNextQuoteRef($conn);
         attachPriceCalculators('edit_s_price', 'edit_n_price', 'edit_markup_pct', 'edit_margin_pct', 'edit_quantity', 'edit_total_display');
     });
 
-    // Handle Item Selection Auto-fill
+    // Handle Client Company Pre-fill Event
+    document.getElementById('company').addEventListener('input', function() {
+        const compName = this.value;
+        if (clientData.hasOwnProperty(compName)) {
+            const client = clientData[compName];
+            if (!document.getElementById('po').value && client.po) {
+                document.getElementById('po').value = client.po;
+            }
+            if (!document.getElementById('term').value && client.term) {
+                document.getElementById('term').value = client.term;
+            }
+            if (!document.getElementById('remarks').value && client.remarks) {
+                document.getElementById('remarks').value = client.remarks;
+            }
+        }
+    });
+
+    // Handle Item Selection Auto-fill & Stock Tracking
     document.getElementById('itemInput').addEventListener('input', function() {
         const p = productMap.get(this.value);
         if (p) {
             document.getElementById('s_price').value = p.supplier_price;
             document.getElementById('n_price').value = p.nam_price;
             document.getElementById('categoryField').value = p.category_code || 'General';
-            // Trigger calculation so markup/margin auto-fills
+            
+            // --- STOCK TRACKER COMPUTATION ---
+            const stock = parseInt(p.current_stock) || 0;
+            const reserved = reservedData[p.name] || 0;
+            const available = stock - reserved;
+            
+            document.getElementById('infoStock').innerText = stock;
+            document.getElementById('infoReserved').innerText = reserved;
+            document.getElementById('infoAvailable').innerText = available;
+            
+            // Show the Tracker box
+            document.getElementById('stockTracker').style.display = 'block';
+            
+            // Trigger calculation so markup/margin auto-fills & computes "Left After Quote"
             document.getElementById('n_price').dispatchEvent(new Event('input'));
+            document.getElementById('quantity').dispatchEvent(new Event('input'));
+        } else {
+            // Hide if invalid item
+            document.getElementById('stockTracker').style.display = 'none';
+        }
+    });
+
+    // Update the "Left After This Quote" computation dynamically when user types quantity
+    document.getElementById('quantity').addEventListener('input', function() {
+        if (document.getElementById('stockTracker').style.display !== 'none') {
+            const reqQty = parseFloat(this.value) || 0;
+            const available = parseInt(document.getElementById('infoAvailable').innerText) || 0;
+            const left = available - reqQty;
+            
+            const leftEl = document.getElementById('infoLeft');
+            leftEl.innerText = left;
+            
+            // Color code it based on if it goes into the negative
+            if (left < 0) {
+                leftEl.classList.remove('text-primary');
+                leftEl.classList.add('text-danger');
+            } else {
+                leftEl.classList.remove('text-danger');
+                leftEl.classList.add('text-primary');
+            }
         }
     });
 
@@ -733,6 +900,7 @@ $next_ref_default = getNextQuoteRef($conn);
             category: category
         });
 
+        // Reset the form fields and hide the tracker
         document.getElementById('itemInput').value = '';
         document.getElementById('quantity').value = '1';
         document.getElementById('s_price').value = '';
@@ -741,6 +909,7 @@ $next_ref_default = getNextQuoteRef($conn);
         document.getElementById('markup_pct').value = '';
         document.getElementById('margin_pct').value = '';
         document.getElementById('categoryField').value = '';
+        document.getElementById('stockTracker').style.display = 'none';
         document.getElementById('itemInput').focus();
 
         renderQueue();
@@ -782,7 +951,8 @@ $next_ref_default = getNextQuoteRef($conn);
         renderQueue();
     }
 
-    async function saveQuoteBatch() {
+    // UPDATED FUNCTION: Now accepts the status mode directly from the button click
+    async function saveQuoteBatch(statusMode = 'Pending') {
         if (quoteQueue.length === 0) return;
 
         const date = document.getElementById('date').value;
@@ -794,10 +964,12 @@ $next_ref_default = getNextQuoteRef($conn);
             return;
         }
 
-        if(!confirm(`Are you sure you want to save this quotation with ${quoteQueue.length} items?`)) return;
+        const actionText = statusMode === 'Reserved' ? "save and RESERVE" : "save";
+        if(!confirm(`Are you sure you want to ${actionText} this quotation with ${quoteQueue.length} items?`)) return;
 
         const payload = {
             action: 'create_quote_batch',
+            status: statusMode, // Passes "Reserved" or "Pending" to the API
             header: {
                 date: date,
                 quote_ref: ref,
@@ -968,7 +1140,7 @@ $next_ref_default = getNextQuoteRef($conn);
                         <p class="mb-0" style="font-size: 0.85rem;">RNA BUILDING, BRGY SANTIAGO</p>
                         <p class="mb-0" style="font-size: 0.85rem;">MALVAR, BATANGAS, PHILIPPINES, 4233</p>
                         <p class="mb-0" style="font-size: 0.85rem;">CONTACT NO: 0963-732-6844 / 0917-834-8811 / 0901-556-352</p>
-                        <p class="mb-0" style="font-size: 0.85rem;">EMAIL: <input type="text" class="print-input" style="width: 250px;" placeholder="Enter email"></p>
+                        <p class="mb-0" style="font-size: 0.85rem;">EMAIL: <input type="text" class="print-input inline-edit" style="width: 250px;" placeholder="Enter email"></p>
                     </div>
                     <div class="col-4 text-end">
                         <h1 class="fw-bolder text-uppercase mt-2" style="color: #475569; font-size: 32px; letter-spacing: 2px;">QUOTATION</h1>
@@ -984,31 +1156,31 @@ $next_ref_default = getNextQuoteRef($conn);
                             <table class="table table-sm table-borderless mb-0">
                                 <tr>
                                     <th width="150" class="p-0 pb-1">COMPANY NAME:</th>
-                                    <td class="p-0 pb-1 fw-bold"><input type="text" class="print-input w-100 fw-bold" value="${client}"></td>
+                                    <td class="p-0 pb-1 fw-bold"><input type="text" class="print-input inline-edit w-100 fw-bold" value="${client}"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">COMPANY ADDRESS:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Address]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Address]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">CONTACT PERSON:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Contact Person]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Contact Person]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">CONTACT NUMBER:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Contact Number]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Contact Number]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">EMAIL ADDRESS:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Email]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Email]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1 mt-2 d-block">TERMS:</th>
-                                    <td class="p-0 pb-1 mt-2"><input type="text" class="print-input w-100" value="${term}"></td>
+                                    <td class="p-0 pb-1 mt-2"><input type="text" class="print-input inline-edit w-100" value="${term}"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">TRANSPORT:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Enter Transport]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Transport]"></td>
                                 </tr>
                             </table>
                         </div>
@@ -1024,15 +1196,15 @@ $next_ref_default = getNextQuoteRef($conn);
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1 mt-5 d-block">TRANSPORT ID:</th>
-                                    <td class="p-0 pb-1 mt-5"><input type="text" class="print-input w-100" placeholder="[Transport ID]"></td>
+                                    <td class="p-0 pb-1 mt-5"><input type="text" class="print-input inline-edit w-100" placeholder="[Transport ID]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1">VEHICLE NO:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input w-100" placeholder="[Vehicle No]"></td>
+                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Vehicle No]"></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-1 text-muted">INQUIRY REF #:</th>
-                                    <td class="p-0 pb-1 text-muted"><input type="text" class="print-input w-100" value="${po}"></td>
+                                    <td class="p-0 pb-1 text-muted"><input type="text" class="print-input inline-edit w-100" value="${po}"></td>
                                 </tr>
                             </table>
                         </div>
@@ -1094,7 +1266,7 @@ $next_ref_default = getNextQuoteRef($conn);
 
                         <p class="fw-bold mb-0 text-decoration-underline">Delivery Terms</p>
                         <ul class="mb-2 ps-3">
-                            <li>Client shall provide weekly projected requirements and 4-6 days lead time for planning purpose. Any modification in the daily should be communicated twenty-four (24) hours before the schedule.</li>
+                            <li>Client shall provide weekly projected requirements and <input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 40px;" value="4-6"> days lead time for planning purpose. Any modification in the daily should be communicated twenty-four (24) hours before the schedule.</li>
                             <li>Client Scheduled delivery on Monday-Friday.</li>
                             <li>Client Authorized Representative must be present at the company to acknowledge the products and quantity described on the Delivery Receiving.</li>
                         </ul>
@@ -1102,12 +1274,12 @@ $next_ref_default = getNextQuoteRef($conn);
                         <p class="fw-bold mb-0 text-decoration-underline">Quality Terms</p>
                         <ul class="mb-2 ps-3">
                             <li>Client Authorized Representative must signed the Receiving Inspection Stamp.</li>
-                            <li>Items reported as damaged or wrong items must be replaced within 7 days of the reported date (Receiving Inspection Stamp), provided all eligibility criteria are met.</li>
+                            <li>Items reported as damaged or wrong items must be replaced within <input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 25px;" value="7"> days of the reported date (Receiving Inspection Stamp), provided all eligibility criteria are met.</li>
                         </ul>
 
                         <p class="fw-bold mb-0 text-decoration-underline">Validity</p>
                         <ul class="mb-4 ps-3">
-                            <li>1 month validity effective receipt of this quotation.</li>
+                            <li><input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 65px;" value="1 month"> validity effective receipt of this quotation.</li>
                         </ul>
                         
                         ${remarks ? `<div class="p-2 mt-2 border border-dark rounded bg-light"><strong class="d-block mb-1">Additional Remarks:</strong>${remarks.replace(/\\n/g, '<br>')}</div>` : ''}
@@ -1119,13 +1291,13 @@ $next_ref_default = getNextQuoteRef($conn);
                         
                         <div class="mt-5 pt-3">
                             <p class="mb-0">Sincerely,</p>
-                            <input type="text" class="print-input w-100 fw-bold fs-6 mb-0 mt-3" value="ALLYSON ASHLEY AGUILERA">
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-3" value="ALLYSON ASHLEY AGUILERA">
                             <div class="small">Sales and Technical Officer</div>
                         </div>
 
                         <div class="mt-5 pt-3">
                             <p class="mb-0">Conforme:</p>
-                            <input type="text" class="print-input w-100 fw-bold fs-6 mb-0 mt-3" placeholder="[Client Signature / Name]">
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-3" placeholder="[Client Signature / Name]">
                             <div class="small">Signature over printed name</div>
                         </div>
                     </div>
@@ -1162,10 +1334,10 @@ $next_ref_default = getNextQuoteRef($conn);
             tbodyHtml += `
                 <tr>
                     <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold"><input type="text" class="print-input w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
-                    <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2"><input type="number" class="print-input text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
+                    <td class="py-2 fw-bold"><input type="text" class="print-input inline-edit w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
+                    <td class="text-center py-2"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-2"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
                     <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
@@ -1191,10 +1363,10 @@ $next_ref_default = getNextQuoteRef($conn);
             tbody += `
                 <tr>
                     <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold"><input type="text" class="print-input w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
-                    <td class="text-center py-2"><input type="text" class="print-input text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2"><input type="number" class="print-input text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
+                    <td class="py-2 fw-bold"><input type="text" class="print-input inline-edit w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
+                    <td class="text-center py-2"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-2"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
                     <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
@@ -1204,7 +1376,13 @@ $next_ref_default = getNextQuoteRef($conn);
     }
 
     function executePrint() {
-        const content = document.getElementById('printArea').outerHTML;
+        const printArea = document.getElementById('printArea');
+        const inputs = printArea.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.setAttribute('value', input.value);
+        });
+
+        const content = printArea.outerHTML;
         document.getElementById('printContainer').innerHTML = content;
         window.print();
     }

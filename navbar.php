@@ -11,6 +11,20 @@ function isActive($page) {
     global $current_page;
     return $current_page == $page ? 'active fw-bold text-primary' : 'text-secondary';
 }
+
+// Function to generate a unique, visible color based on the user's name
+function getAvatarColor($name) {
+    $hash = 0;
+    for ($i = 0; $i < strlen($name); $i++) {
+        $hash = ord($name[$i]) + (($hash << 5) - $hash);
+    }
+    $h = abs($hash) % 360;
+    // HSL (Hue, Saturation, Lightness): 
+    // 70% saturation and 55% lightness keeps colors vibrant and readable on dark/light modes
+    return "hsl({$h}, 70%, 55%)"; 
+}
+
+$avatar_bg_color = getAvatarColor($user_name);
 ?>
 
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -31,19 +45,40 @@ function isActive($page) {
     }
     .nav-link:hover { color: #2563eb !important; }
     
-    /* Logo Styling for Responsiveness */
+    /* Bigger Logo Styling */
     .navbar-logo {
-        height: 35px; /* Default desktop size */
+        height: 50px; 
         width: auto;
         object-fit: contain;
         transition: height 0.3s ease;
     }
+
+    /* Brand Text & Slogan Container */
+    .brand-text-container {
+        white-space: normal; /* Allows long company names to wrap instead of pushing the burger menu */
+        line-height: 1.2;
+    }
+
+    .navbar-brand-text {
+        font-size: 1.15rem; /* Desktop size */
+    }
+
+    /* Slogan Text Styling */
+    .slogan-text {
+        font-size: 0.75rem;
+        color: #64748b; 
+        font-weight: 500;
+        margin-top: 2px;
+    }
     
-    /* User Avatar */
+    /* Dynamic User Avatar */
     .avatar-circle {
-        width: 32px; height: 32px; background-color: #f1f5f9; color: #475569;
+        width: 32px; height: 32px; 
+        color: #ffffff; 
         border-radius: 50%; display: flex; align-items: center; justify-content: center;
-        font-weight: 700; font-size: 14px; margin-right: 8px; border: 1px solid #e2e8f0;
+        font-weight: 700; font-size: 14px; margin-right: 8px;
+        text-shadow: 0px 1px 2px rgba(0,0,0,0.3); 
+        border: 2px solid rgba(255,255,255,0.4);
     }
     
     /* Mobile Fixes */
@@ -57,13 +92,20 @@ function isActive($page) {
         }
     }
     
-    /* Extra Small Mobile Fixes for Logo */
+    /* Extra Small Mobile Fixes (Where it gets messy) */
     @media (max-width: 576px) {
         .navbar-logo {
-            height: 28px; /* Slightly smaller on mobile to save space */
+            height: 38px; /* Slightly smaller logo to free up horizontal space */
+        }
+        .brand-text-container {
+            max-width: 195px; /* Constrains the text width so the burger menu stays visible */
         }
         .navbar-brand-text {
-            font-size: 1.1rem !important;
+            font-size: 0.9rem !important; /* Smaller text for mobile */
+            line-height: 1.1;
+        }
+        .slogan-text {
+            font-size: 0.65rem;
         }
     }
 </style>
@@ -71,8 +113,12 @@ function isActive($page) {
 <nav class="navbar navbar-expand-lg navbar-light sticky-top py-2">
     <div class="container-fluid px-lg-4">
         
-        <a class="navbar-brand d-flex align-items-center fw-bold text-primary" href="index.php" style="font-size: 1.25rem;">
+        <a class="navbar-brand d-flex align-items-center text-decoration-none" href="index.php">
             <img src="YOUR_LOGO_HERE.png" alt="NAM Supply Logo" class="navbar-logo me-2" onerror="this.style.display='none'">
+            <div class="d-flex flex-column justify-content-center brand-text-container">
+                <span class="fw-bold text-primary navbar-brand-text">NAM Builders and Supply Corp.</span>
+                <span class="slogan-text">Built for Business. Powered by Supply.</span>
+            </div>
         </a>
 
         <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -146,7 +192,7 @@ function isActive($page) {
             <ul class="navbar-nav ms-auto align-items-center">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle d-flex align-items-center text-dark" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <div class="avatar-circle">
+                        <div class="avatar-circle" style="background-color: <?php echo $avatar_bg_color; ?>;">
                             <?php echo strtoupper(substr($user_name, 0, 1)); ?>
                         </div>
                         <span class="d-none d-sm-inline small fw-bold"><?php echo htmlspecialchars($user_name); ?></span>
@@ -166,3 +212,5 @@ function isActive($page) {
         </div>
     </div>
 </nav>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>

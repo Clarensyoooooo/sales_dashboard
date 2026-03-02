@@ -75,7 +75,7 @@ ksort($clientData);
 
     <?php include 'navbar.php'; ?>
 
-    <div class="container-fluid mt-4">
+    <div class="container-fluid mt-4 pb-5">
         <div class="row g-4">
             
             <div class="col-lg-4">
@@ -189,15 +189,6 @@ ksort($clientData);
                                         <label class="form-label small fw-bold">Total Sales</label>
                                         <input type="text" id="tSales" class="form-control form-control-sm calculated-field text-primary">
                                     </div>
-
-                                    <div class="col-12 mt-3">
-                                        <div class="form-check form-switch p-2 rounded bg-white border">
-                                            <input class="form-check-input ms-1 me-2" type="checkbox" name="is_reserved" id="isReserved" value="1">
-                                            <label class="form-check-label small fw-bold text-danger" for="isReserved">
-                                                <i class="fas fa-bookmark me-1"></i> Reservation (Send to Quotations)
-                                            </label>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
 
@@ -239,7 +230,7 @@ ksort($clientData);
                     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
                         <div>
                             <h5 class="mb-0 fw-bold"><i class="fas fa-list-ul me-2"></i>Pending Items</h5>
-                            <small class="text-muted">Review items below before submitting.</small>
+                            <small class="text-muted">Review items below before submitting to Sales or Quotations.</small>
                         </div>
                         <span class="badge bg-primary rounded-pill fs-6" id="qCount">0 Items</span>
                     </div>
@@ -250,16 +241,15 @@ ksort($clientData);
                                     <tr>
                                         <th>Item / Category</th>
                                         <th>Client / Inquiry</th>
-                                        <th class="text-end">Qty</th>
+                                        <th class="text-center">Qty</th>
                                         <th class="text-end">Price</th>
                                         <th class="text-end">Total</th>
-                                        <th>Supplier</th>
-                                        <th class="text-end">Action</th>
+                                        <th class="text-end pe-3">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <td colspan="7" class="text-center py-5 text-muted">
+                                        <td colspan="6" class="text-center py-5 text-muted">
                                             <i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>
                                             List is empty. Add items from the left.
                                         </td>
@@ -267,11 +257,16 @@ ksort($clientData);
                                 </tbody>
                             </table>
                         </div>
-                        <div class="p-3 border-top bg-light">
-                            <button onclick="submitBatch()" class="btn btn-primary btn-lg w-100 fw-bold" id="submitBtn" disabled>
-                                <i class="fas fa-save me-2"></i>Save All Records
+                        
+                        <div class="p-3 border-top bg-light d-flex gap-2">
+                            <button onclick="submitBatch('sales')" class="btn btn-primary w-100 fw-bold shadow-sm" id="submitBtn" disabled>
+                                <i class="fas fa-save me-2"></i>Save to Sales Records
+                            </button>
+                            <button onclick="submitBatch('quotations')" class="btn btn-warning text-dark w-100 fw-bold shadow-sm" id="quoteBtn" disabled>
+                                <i class="fas fa-file-invoice me-2"></i>Send to Quotations
                             </button>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -480,9 +475,6 @@ ksort($clientData);
             const form = document.getElementById('entryForm');
             const formData = new FormData(form);
             const entry = Object.fromEntries(formData.entries());
-            
-            // Handle Checkbox Manually
-            entry.is_reserved = document.getElementById('isReserved').checked ? 1 : 0;
 
             if(!entry.item || !entry.company || !entry.nam_unit_price) {
                 alert("Please fill required fields (marked with *)");
@@ -504,7 +496,6 @@ ksort($clientData);
                         const el = document.getElementById(id);
                         if(el) el.value = (id === 'quantity') ? '1' : '';
                     });
-                    document.getElementById('isReserved').checked = false;
                     document.getElementById('itemInput').focus();
                 } else {
                     form.reset();
@@ -516,37 +507,38 @@ ksort($clientData);
         function renderQueue() {
             const tbody = document.querySelector('#qTable tbody');
             const count = document.getElementById('qCount');
-            const btn = document.getElementById('submitBtn');
+            const btnSales = document.getElementById('submitBtn');
+            const btnQuote = document.getElementById('quoteBtn');
             
             count.textContent = batchQueue.length + " Items";
-            btn.disabled = batchQueue.length === 0;
+            
+            // Toggle both buttons depending on if queue has items
+            btnSales.disabled = batchQueue.length === 0;
+            btnQuote.disabled = batchQueue.length === 0;
 
             if (batchQueue.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-5 text-muted">List is empty.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>List is empty. Add items from the left.</td></tr>';
                 return;
             }
 
             let html = '';
             batchQueue.forEach((item, idx) => {
                 const total = (parseFloat(item.quantity_requested) * parseFloat(item.nam_unit_price)).toFixed(2);
-                const reserveBadge = item.is_reserved == 1 ? '<span class="badge bg-danger ms-1">Reserved</span>' : '';
                 
                 html += `
                     <tr class="${idx === editingIndex ? 'editing' : ''}">
                         <td>
                             <div class="fw-bold text-dark">${item.item}</div>
                             <div class="small text-muted">${item.category}</div>
-                            ${reserveBadge}
                         </td>
                         <td>
                             <div class="text-truncate" style="max-width:150px;">${item.company}</div>
                             <div class="small text-muted">${item.po_number || '-'}</div>
                         </td>
-                        <td class="text-end">${item.quantity_requested}</td>
+                        <td class="text-center">${item.quantity_requested}</td>
                         <td class="text-end">${item.nam_unit_price}</td>
                         <td class="text-end fw-bold text-primary">${total}</td>
-                        <td class="small text-muted">${item.supplier || '-'}</td>
-                        <td class="text-end">
+                        <td class="text-end pe-3">
                             <div class="btn-group btn-group-sm">
                                 <button onclick="editItem(${idx})" class="btn btn-outline-secondary"><i class="fas fa-pencil-alt"></i></button>
                                 <button onclick="removeItem(${idx})" class="btn btn-outline-danger"><i class="fas fa-times"></i></button>
@@ -566,7 +558,6 @@ ksort($clientData);
                 const input = form.querySelector(`[name="${key}"]`);
                 if(input) input.value = value;
             }
-            document.getElementById('isReserved').checked = (item.is_reserved == 1);
             
             document.getElementById('addBtn').style.display = 'none';
             document.getElementById('editButtons').style.display = 'flex';
@@ -587,38 +578,32 @@ ksort($clientData);
             renderQueue();
         }
 
-        // --- 4. SUBMIT SPLIT LOGIC ---
-        window.submitBatch = async function() {
-            if(!confirm(`Submit ${batchQueue.length} records?`)) return;
+        // --- 4. NEW BATCH SUBMIT LOGIC ---
+        window.submitBatch = async function(destination) {
+            const actionText = destination === 'quotations' ? 'SEND BATCH TO QUOTATIONS' : 'SAVE AS SALES';
+            if(!confirm(`Are you sure you want to ${actionText} with ${batchQueue.length} items?`)) return;
             
-            const btn = document.getElementById('submitBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+            const btnSales = document.getElementById('submitBtn');
+            const btnQuote = document.getElementById('quoteBtn');
+            
+            // Disable both while processing
+            btnSales.disabled = true;
+            btnQuote.disabled = true;
 
-            const reservations = batchQueue.filter(i => i.is_reserved == 1);
-            const sales = batchQueue.filter(i => i.is_reserved != 1);
-
-            let errorOccurred = false;
-
-            // 1. Process Reservations (Send to Quotations API)
-            if(reservations.length > 0) {
-                // Group by Company/PO for header
-                // Note: For simplicity, we create one header per item or group identicals. 
-                // Here we simply push individual items to quotaion API as a batch.
-                // We construct the "header" from the first item, but technically each could differ.
-                // A better approach is to submit 1 by 1 or group. Let's submit 1 batch per unique Client+PO combination.
+            if (destination === 'quotations') {
+                btnQuote.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
                 
-                // For now, simpler: map to the structure quotations.php expects
+                // Package the data exactly how quotations.php expects it
                 const header = {
-                    date: reservations[0].date,
-                    quote_ref: 'RES-' + Date.now(), // Auto temp ref
-                    company: reservations[0].company,
-                    po: reservations[0].po_number,
-                    term: reservations[0].payment_term,
-                    remarks: reservations[0].remarks
+                    date: batchQueue[0].date,
+                    quote_ref: 'RES-' + Date.now().toString().slice(-6), // Auto temp ref
+                    company: batchQueue[0].company,
+                    po: batchQueue[0].po_number,
+                    term: batchQueue[0].payment_term,
+                    remarks: batchQueue[0].remarks
                 };
                 
-                const items = reservations.map(r => ({
+                const items = batchQueue.map(r => ({
                     item: r.item,
                     category: r.category,
                     quantity: r.quantity_requested,
@@ -634,37 +619,49 @@ ksort($clientData);
                             action: 'create_quote_batch',
                             header: header,
                             items: items,
-                            status: 'Reserved' // New status handling
+                            status: 'Reserved' // Automatically tags them as Reserved in quotations
                         })
                     });
                     const d = await res.json();
-                    if(!d.success) { console.error('Reservation Error', d); errorOccurred = true; }
-                } catch(e) { errorOccurred = true; }
-            }
+                    if(d.success) {
+                        // INSTANT REDIRECT TO QUOTATIONS
+                        window.location.href = 'quotations.php?msg=created';
+                    } else {
+                        alert('Error saving to quotations: ' + d.message);
+                        btnQuote.innerHTML = '<i class="fas fa-file-invoice me-2"></i>Send to Quotations';
+                        btnSales.disabled = false; btnQuote.disabled = false;
+                    }
+                } catch(e) { 
+                    alert('Network Error connecting to quotations.php'); 
+                    btnQuote.innerHTML = '<i class="fas fa-file-invoice me-2"></i>Send to Quotations';
+                    btnSales.disabled = false; btnQuote.disabled = false;
+                }
 
-            // 2. Process Sales (Send to Submit Batch)
-            if(sales.length > 0 && !errorOccurred) {
+            } else {
+                // destination === 'sales'
+                btnSales.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+                
                 try {
                     const res = await fetch('submit_batch.php', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(sales)
+                        body: JSON.stringify(batchQueue)
                     });
                     const d = await res.json();
-                    if(!d.success) { alert('Sales Error: ' + d.message); errorOccurred = true; }
-                } catch(e) { errorOccurred = true; }
+                    if(d.success) { 
+                        // INSTANT REDIRECT TO RECORDS
+                        window.location.href = 'records.php?success=1';
+                    } else { 
+                        alert('Error saving sales: ' + d.message); 
+                        btnSales.innerHTML = '<i class="fas fa-save me-2"></i>Save to Sales Records';
+                        btnSales.disabled = false; btnQuote.disabled = false;
+                    }
+                } catch(e) { 
+                    alert('Network Error connecting to submit_batch.php');
+                    btnSales.innerHTML = '<i class="fas fa-save me-2"></i>Save to Sales Records';
+                    btnSales.disabled = false; btnQuote.disabled = false;
+                }
             }
-
-            if(!errorOccurred) {
-                alert(`✅ Success! Processed ${batchQueue.length} items.`);
-                batchQueue = [];
-                renderQueue();
-            } else {
-                alert("❌ Some items failed to save. Please check console.");
-            }
-            
-            btn.innerHTML = '<i class="fas fa-save me-2"></i>Save All Records';
-            btn.disabled = false;
         }
     </script>
 </body>

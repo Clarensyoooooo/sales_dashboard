@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                 }
             }
             
-            // LOGIC 2: PRICES IMPORT (UPDATED FIX FOR ACCURATE CSV COLUMNS AND CATEGORY MAPPING)
+            // LOGIC 2: PRICES IMPORT (UPDATED FOR NEW CSV FORMAT)
             elseif ($importType == 'prices') {
                 
                 // MAPPING: CSV Code -> Database/Form Category
@@ -153,38 +153,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
 
                     $name = trim($data[0]);
                     
+                    // NEW MAPPING: 0=Product, 1=Unit, 2=Cat, 3=Supplier, 4=Supp Price, 5=NAM Price, 6=Margin, 7=Inventory
+                    $unit = trim($data[1] ?? '');
+
                     // GRAB RAW CATEGORY AND MAP IT
-                    $raw_category = trim($data[1] ?? 'General');
+                    $raw_category = trim($data[2] ?? 'General');
                     if (empty($raw_category)) $raw_category = 'General';
                     
                     // TRANSLATE ABBREVIATION TO FULL NAME
                     $category_code = isset($categoryMap[$raw_category]) ? $categoryMap[$raw_category] : $raw_category;
                     
-                    $unit = trim($data[2] ?? '');
                     $supplier = trim($data[3] ?? '');
 
                     $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
                     
-                    // Mapping columns 4 and 5 based on your CSV structure
                     $supplier_price = $cleanPrice($data[4] ?? 0);
                     $nam_price = $cleanPrice($data[5] ?? 0);
+                    $margin = trim($data[6] ?? '');
+                    $inventory = (int) trim($data[7] ?? 0);
                     
-                    $sql = "INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price) 
-                            VALUES (?, ?, ?, ?, ?, ?) 
+                    $sql = "INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 10) 
                             ON DUPLICATE KEY UPDATE 
                             category_code = VALUES(category_code),
                             unit = VALUES(unit),
                             supplier = VALUES(supplier),
                             supplier_price = VALUES(supplier_price), 
-                            nam_price = VALUES(nam_price)";
+                            nam_price = VALUES(nam_price),
+                            margin = VALUES(margin),
+                            current_stock = VALUES(current_stock)";
                             
                     $stmt = $conn->prepare($sql);
                     
                     if ($stmt) {
-                        $stmt->bind_param("ssssdd", $name, $category_code, $unit, $supplier, $supplier_price, $nam_price);
+                        $stmt->bind_param("ssssddsi", $name, $category_code, $unit, $supplier, $supplier_price, $nam_price, $margin, $inventory);
                         if ($stmt->execute()) {
                             $imported++;
-                            $importLogs[] = "<span class='text-primary'>[Row $row]</span> Updated Inventory: <strong>$name</strong> (SRP: ₱$nam_price)";
+                            $importLogs[] = "<span class='text-primary'>[Row $row]</span> Updated Inventory: <strong>$name</strong> (SRP: ₱$nam_price | Stock: $inventory)";
                         } else {
                             $importLogs[] = "<span class='text-danger'>[Row $row]</span> Error executing update for $name: " . $stmt->error;
                         }
@@ -204,7 +209,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
         }
     }
 }
-$conn->close();
+
+// Check if $conn exists and is open before trying to close it
+if (isset($conn) && $conn instanceof mysqli) {
+    $conn->close();
+}
 ?>
 
 <!DOCTYPE html>

@@ -93,13 +93,13 @@
                         <thead class="bg-light">
                             <tr>
                                 <th class="ps-3 py-3">Product Name</th>
-                                <th>Category</th>
                                 <th>Unit</th>
+                                <th>Category</th>
                                 <th>Supplier</th>
                                 <th class="text-end">Supp. Price</th>
                                 <th class="text-end">NAM Price</th>
-                                <th class="text-center">Stock</th>
                                 <th class="text-center">Margin</th>
+                                <th class="text-center">Inventory</th>
                                 <th class="text-end pe-3">Actions</th>
                             </tr>
                         </thead>
@@ -355,13 +355,13 @@
 
                 tr.innerHTML = `
                     <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name}</td>
-                    <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
                     <td class="text-muted small">${p.unit || '-'}</td>
+                    <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
                     <td class="small">${p.supplier || '-'}</td>
                     <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
                     <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="text-center">${stockBadge}</td>
                     <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
+                    <td class="text-center">${stockBadge}</td>
                     <td class="text-end pe-3">
                         <div class="btn-group btn-group-sm">
                             <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">

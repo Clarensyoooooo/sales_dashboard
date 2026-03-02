@@ -9,14 +9,14 @@ $categoryMap = [
     'FF' => 'OFFICE FURNITURE & FIXTURES',
     'MA' => 'MATERIALS',
     'MD' => 'MEDICINE',
-    'OS' => 'OFFICE SUPPLIES', // Maps to your form's category
+    'OS' => 'OFFICE SUPPLIES', 
     'PPE' => 'PPE',
     'TE' => 'OFFICE TOOLS AND EQUIPMENT'
 ];
 
 echo "<h1>Importing Price List...</h1>";
 
-$csvFile = "Centralized Suppliers' Price - CENTRALIZED WITH SUPPLIERS' PRICE.csv"; 
+$csvFile = "Centralized Suppliers' Price - CENTRALIZED WITH SUPPLIERS' PRICE (1).csv"; // Ensure this filename matches exactly
 
 if (!file_exists($csvFile)) {
     die("Error: File '$csvFile' not found. Make sure it is in the sales_dashboard folder.");
@@ -35,27 +35,30 @@ if (($handle = fopen($csvFile, "r")) !== FALSE) {
         // Skip header rows (Rows 1 and 2 in your file)
         if ($row <= 2) continue;
         
-        // Column mapping based on your CSV:
-        // 0=Product, 1=Cat, 2=Unit, 3=Supplier, 4=Supp Price, 5=NAM Price
-        $name = trim($data[0]);
+        // NEW MAPPING: 0=Product, 1=Unit, 2=Cat, 3=Supplier, 4=Supp Price, 5=NAM Price, 6=Margin, 7=Inventory
+        $name = trim($data[0] ?? '');
         
         // Stop if no product name
         if (empty($name)) continue;
 
-        $catCode = trim($data[1]);
-        $unit = trim($data[2]);
-        $supplier = trim($data[3]);
+        $unit = trim($data[1] ?? '');
+        $catCode = trim($data[2] ?? '');
+        $supplier = trim($data[3] ?? '');
         
         // Clean prices (Remove '₱', commas, and spaces)
-        $s_price = (float) preg_replace('/[₱,\s]/', '', $data[4]);
-        $n_price = (float) preg_replace('/[₱,\s]/', '', $data[5]);
-        $margin = trim($data[6]);
+        $s_price = (float) preg_replace('/[₱,\s]/', '', $data[4] ?? '0');
+        $n_price = (float) preg_replace('/[₱,\s]/', '', $data[5] ?? '0');
+        $margin = trim($data[6] ?? '');
+        
+        // Grab Inventory (Defaults to 0 if blank)
+        $inventory = (int) trim($data[7] ?? '0');
 
         // Map Category Code to Full Name if possible
         $fullCategory = isset($categoryMap[$catCode]) ? $categoryMap[$catCode] : $catCode;
 
-        $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssdds", $name, $fullCategory, $unit, $supplier, $s_price, $n_price, $margin);
+        // Added current_stock to the import query
+        $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 10)");
+        $stmt->bind_param("ssssddsi", $name, $fullCategory, $unit, $supplier, $s_price, $n_price, $margin, $inventory);
         
         if ($stmt->execute()) {
             $success++;
@@ -63,7 +66,7 @@ if (($handle = fopen($csvFile, "r")) !== FALSE) {
     }
     fclose($handle);
     echo "<h3>✅ Successfully imported $success products!</h3>";
-    echo "<a href='form.php'>Go to Entry Form</a>";
+    echo "<a href='products.php'>Go to Inventory Dashboard</a>";
 }
 
 $conn->close();
