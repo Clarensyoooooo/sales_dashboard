@@ -32,10 +32,9 @@
         /* Filter Bar */
         .filter-bar { background: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); margin-bottom: 25px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center; justify-content: space-between; }
         
-        /* Target Progress */
-        .target-widget { flex-grow: 1; max-width: 300px; min-width: 200px; }
+        /* Target Progress / Bonus */
+        .target-widget { flex-grow: 1; max-width: 320px; min-width: 250px; }
         .progress-label { font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; margin-bottom: 5px; }
-        .progress { height: 8px; border-radius: 4px; background-color: #e2e8f0; }
         
         /* Drill Tags */
         .drill-tag {
@@ -57,6 +56,11 @@
         /* Horizontal Scroll for Company Chart */
         .scrollable-chart-wrapper { width: 100%; overflow-x: auto; padding-bottom: 10px; }
         #companyChartContainer { min-height: 400px; position: relative; }
+        
+        /* Hide arrows in number input */
+        .no-spinners::-webkit-outer-spin-button,
+        .no-spinners::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .no-spinners { -moz-appearance: textfield; }
     </style>
 </head>
 <body>
@@ -85,8 +89,8 @@
                 <div>
                     <label class="small fw-bold text-muted d-block mb-1">Targets (Min / Max)</label>
                     <div class="input-group input-group-sm">
-                        <input type="number" id="minTarget" class="form-control shadow-none" value="100000" step="10000" placeholder="Min" style="width: 80px;">
-                        <input type="number" id="maxTarget" class="form-control shadow-none" value="200000" step="10000" placeholder="Max" onchange="updateTargetWidget()" style="width: 80px;">
+                        <input type="number" id="minTarget" class="form-control shadow-none" value="100000" step="10000" placeholder="Min" style="width: 80px;" onchange="updateDashboard()">
+                        <input type="number" id="maxTarget" class="form-control shadow-none" value="200000" step="10000" placeholder="Max" onchange="updateDashboard()" style="width: 80px;">
                     </div>
                 </div>
                 <div class="d-flex align-items-end pb-1">
@@ -94,18 +98,16 @@
                 </div>
             </div>
 
-            <div class="target-widget border-start ps-4 ms-2 d-none d-lg-block">
-                <div class="progress-label">
-                    <span class="text-primary"><i class="fas fa-bullseye me-1"></i>Goal Progress</span>
-                    <span id="targetText" class="text-dark">0%</span>
+            <div class="target-widget mt-3 mt-lg-0 pt-3 pt-lg-0 border-top border-secondary-subtle ps-lg-4 ms-lg-2" style="border-top: none !important; @media (max-width: 991px) { border-top: 1px solid #dee2e6 !important; }">
+                <div class="progress-label align-items-center mb-0">
+                    <span class="text-primary"><i class="fas fa-gift me-1"></i>Performance Bonus</span>
+                    <div class="input-group input-group-sm ms-2" style="width: 85px;">
+                        <input type="number" id="bonusPercent" class="form-control shadow-none text-center text-primary fw-bold bg-primary bg-opacity-10 border-primary-subtle no-spinners" value="1" step="0.1" min="0" oninput="updateBonusWidget()">
+                        <span class="input-group-text bg-primary bg-opacity-10 text-primary border-primary-subtle px-2">%</span>
+                    </div>
                 </div>
-                <div class="progress">
-                    <div id="targetBar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
-                </div>
-                <div class="d-flex justify-content-between mt-1">
-                    <small class="text-muted" style="font-size: 10px;">Current: <span id="currentSales" class="fw-bold">₱0</span></small>
-                    <small class="text-muted" style="font-size: 10px;">Goal: <span id="goalSales" class="fw-bold">₱0</span></small>
-                </div>
+                <div class="fw-bold mt-1" id="calculatedBonus" style="font-size: 26px; color: #4338ca;">₱0.00</div>
+                <small class="text-muted" style="font-size: 10px;">Calculated from currently filtered revenue</small>
             </div>
             
             <div id="activeFiltersArea" class="w-100 mt-2 pt-2 border-top d-flex align-items-center" style="display:none !important;">
@@ -121,6 +123,7 @@
                     <div class="kpi-label text-primary">Total Revenue</div>
                     <div class="kpi-value" id="totalSales">₱0.00</div>
                     <div class="mt-2" id="growthBadge"></div>
+                    <div class="mt-1" id="targetBadge"></div>
                     <i class="fas fa-coins icon-bg text-primary"></i>
                 </div>
             </div>
@@ -207,10 +210,10 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-file-invoice-dollar text-secondary me-2"></i>Revenue by Terms</span>
+                        <span><i class="fas fa-money-check-alt text-secondary me-2"></i>Collection Status (Paid vs Unpaid)</span>
                     </div>
                     <div style="height: 300px; position:relative;">
-                        <canvas id="termsChart"></canvas>
+                        <canvas id="collectionChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -361,28 +364,16 @@
         resetBtn.style.display = hasActive ? 'inline-block' : 'none';
     }
 
-    function updateTargetWidget() {
-        const max = parseFloat(document.getElementById('maxTarget').value) || 1;
-        const current = currentTotalSales;
-        const pct = Math.min(100, Math.round((current / max) * 100));
-        
-        document.getElementById('targetBar').style.width = pct + '%';
-        document.getElementById('targetText').innerText = pct + '%';
-        document.getElementById('currentSales').innerText = formatLarge(current);
-        document.getElementById('goalSales').innerText = formatLarge(max);
-        
-        const bar = document.getElementById('targetBar');
-        bar.className = 'progress-bar progress-bar-striped progress-bar-animated';
-        if(pct >= 100) bar.classList.add('bg-success');
-        else if(pct >= 70) bar.classList.add('bg-primary');
-        else if(pct >= 40) bar.classList.add('bg-warning');
-        else bar.classList.add('bg-danger');
+    function updateBonusWidget() {
+        const percentVal = parseFloat(document.getElementById('bonusPercent').value) || 0;
+        const bonusAmount = currentTotalSales * (percentVal / 100);
+        document.getElementById('calculatedBonus').innerText = formatMoney(bonusAmount);
     }
 
     async function updateDashboard() {
         await fetchSalesData();
         await fetchInventoryData();
-        updateTargetWidget();
+        updateBonusWidget();
     }
 
     async function fetchInventoryData() {
@@ -398,9 +389,7 @@
         const period = document.getElementById('periodFilter').value;
         const now = new Date();
         
-        // --- NEW LOCAL DATE FIX ---
-        // toISOString() uses UTC, which pushes Philippine midnight to 4PM the previous day.
-        // This helper safely forces the exact local YYYY-MM-DD.
+        // --- LOCAL DATE FIX ---
         const toLocalYYYYMMDD = (d) => {
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -418,7 +407,6 @@
             d.setDate(d.getDate() - d.getDay()); 
             start = toLocalYYYYMMDD(d); 
         } else if (period === 'month') { 
-            // 1st of the current month local time
             start = toLocalYYYYMMDD(new Date(now.getFullYear(), now.getMonth(), 1)); 
         } else if (period === 'quarter') { 
             start = toLocalYYYYMMDD(new Date(now.getFullYear(), 0, 1)); 
@@ -431,7 +419,6 @@
             if (val) { 
                 const [y, m] = val.split('-'); 
                 start = `${y}-${m}-01`; 
-                // Passing 0 as the day dynamically grabs the exact last day of that specific month locally
                 end = toLocalYYYYMMDD(new Date(y, m, 0)); 
             }
         } else {
@@ -454,6 +441,20 @@
             document.getElementById('avgOrder').textContent = formatMoney(data.stats.avg_order_value);
             document.getElementById('orderCount').textContent = `${data.stats.total_orders} Orders`;
 
+            // --- DYNAMIC TARGET CALCULATION ---
+            let targetRev = 2500000; // Base: 1 Month
+            if (period === 'today') targetRev = 2500000 / 30;
+            else if (period === 'week') targetRev = 2500000 / 4;
+            else if (period === 'quarter') targetRev = 2500000 * 3;
+            else if (period === 'year') targetRev = 2500000 * 12;
+            
+            const targetPct = ((data.stats.total_sales / targetRev) * 100).toFixed(1);
+            let targetColor = data.stats.total_sales >= targetRev ? 'text-success' : 'text-primary';
+            let targetIcon = data.stats.total_sales >= targetRev ? 'fa-arrow-up' : 'fa-bullseye';
+            const formattedTarget = formatLarge(targetRev);
+            
+            document.getElementById('targetBadge').innerHTML = `<small class="${targetColor} fw-bold" style="font-size: 0.75rem;"><i class="fas ${targetIcon} me-1"></i>${targetPct}% of ${formattedTarget} Target</small>`;
+
             // Growth Badge
             const growth = data.stats.growth_sales || 0;
             const growthBadge = document.getElementById('growthBadge');
@@ -469,11 +470,11 @@
             renderDeliveryChart(data.delivery_stats);
             renderSupplierChart(data.supplier_costs);
             renderCompanyChart(data.company_sales);
-            renderTermsChart(data.payment_terms);
+            renderCollectionChart(data.collection_status);
             renderTopProducts(data.top_products);
             renderMatrix(data.category_matrix);
             
-            updateTargetWidget();
+            updateBonusWidget();
 
         } catch (err) { console.error("Sales data error:", err); }
     }
@@ -481,7 +482,6 @@
     // --- CHART FUNCTIONS ---
     function renderDailyChart(data) {
         const ctx = document.getElementById('dailyChart').getContext('2d');
-        // Updated Default Values
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
         const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
 
@@ -492,13 +492,12 @@
             data: {
                 labels: data.map(d => d.label),
                 datasets: [
-                    // Order 0 = Drawn Last (Top)
                     { 
                         type: 'line', 
                         label: 'Profit Margin', 
                         data: data.map(d => d.margin), 
                         yAxisID: 'y1',
-                        borderColor: colors.warning, // Amber
+                        borderColor: colors.warning, 
                         backgroundColor: colors.warning,
                         borderWidth: 2, 
                         borderDash: [5, 3],
@@ -510,7 +509,7 @@
                         label: 'Sales Trend', 
                         data: data.map(d => d.sales), 
                         yAxisID: 'y',
-                        borderColor: '#4338ca', // Darker Indigo
+                        borderColor: '#4338ca', 
                         borderWidth: 2,
                         tension: 0.3, 
                         pointRadius: 0,
@@ -601,27 +600,34 @@
         });
     }
     
-    function renderTermsChart(data) {
-        const ctx = document.getElementById('termsChart').getContext('2d');
-        if (charts.terms) charts.terms.destroy();
+    function renderCollectionChart(data) {
+        const ctx = document.getElementById('collectionChart').getContext('2d');
+        if (charts.collection) charts.collection.destroy();
 
-        charts.terms = new Chart(ctx, {
-            type: 'polarArea',
+        const bgColors = data.map(d => d.status === 'Paid' ? colors.success : colors.warning);
+
+        charts.collection = new Chart(ctx, {
+            type: 'pie',
             data: {
-                labels: data.map(d => d.term),
+                labels: data.map(d => d.status),
                 datasets: [{
                     data: data.map(d => d.sales), 
-                    backgroundColor: colors.transparentPalette,
-                    borderWidth: 1,
+                    backgroundColor: bgColors,
+                    borderWidth: 2,
                     borderColor: '#fff'
                 }]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                scales: { r: { ticks: { display: false }, grid: { color: '#f1f5f9' } } },
                 plugins: { 
-                    legend: { position: 'right', labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true } },
-                    datalabels: { display: false }
+                    legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return ' ' + context.label + ': ' + formatLarge(context.raw);
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -678,20 +684,18 @@
 
         const ctx = document.getElementById('companyChart').getContext('2d');
         
-        // --- NEW EMPLOYEE COLOR MAPPING ---
         const employeeColors = {
-            'Ms. Anne': '#419CA1', // Teal
-            'Ms. Cherry': '#AFD5F7', // Light Blue
-            'Ms. Glenda': 'green', // Green
-            'Ms. Ivy': 'purple', // Purple
-            'Ms. Ally': 'blue', // Blue
-            'Ms. Hannah': '#FC0FC0', // Hot Pink
-            'Unassigned': '#cbd5e1' // Gray
+            'Ms. Anne': '#419CA1',
+            'Ms. Cherry': '#AFD5F7',
+            'Ms. Glenda': 'green',
+            'Ms. Ivy': 'purple',
+            'Ms. Ally': 'blue',
+            'Ms. Hannah': '#FC0FC0',
+            'Unassigned': '#cbd5e1'
         };
 
-        // Assign colors dynamically based on the employee data
         const backgroundColors = data.map(d => employeeColors[d.employee] || employeeColors['Unassigned']);
-
+        
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
         const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
 
@@ -715,7 +719,7 @@
                         type: 'bar',
                         label: 'Total Sales',
                         data: data.map(d => d.total_sales),
-                        backgroundColor: backgroundColors, // <--- INJECTED DYNAMIC COLORS HERE
+                        backgroundColor: backgroundColors,
                         borderRadius: 3,
                         barPercentage: 0.6,
                         order: 2
@@ -730,14 +734,12 @@
                         display: true, position: 'bottom', 
                         labels: { 
                             usePointStyle: true, boxWidth: 8, padding: 15,
-                            // Hide the general "Total Sales" box from legend since we added custom ones
                             filter: function(item, chart) { return item.text !== 'Total Sales'; }
                         } 
                     },
                     tooltip: {
                         callbacks: {
                             afterLabel: function(context) {
-                                // Show Account manager on Hover
                                 return 'Account Manager: ' + data[context.dataIndex].employee;
                             }
                         }

@@ -276,7 +276,7 @@ if ($resReserved) {
         /* Magic Placeholder for ContentEditable Divs */
         [contenteditable]:empty:before { content: attr(placeholder); color: #adb5bd; pointer-events: none; display: block; font-style: italic; }
 
-        /* Print Specific CSS */
+        /* ULTRA COMPACT PRINT STYLES */
         @media print {
             body > :not(#printContainer) { display: none !important; }
             #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
@@ -289,7 +289,36 @@ if ($resReserved) {
             input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            @page { size: A4 portrait; margin: 15mm; }
+            
+            /* Squeeze the margins to fit more vertically */
+            @page { size: A4 portrait; margin: 5mm; }
+
+            /* Force all text to be smaller and tighter */
+            #printArea { font-size: 11px !important; line-height: 1.1 !important; }
+            #printArea h3 { font-size: 16px !important; margin-bottom: 2px !important; }
+            #printArea h1 { font-size: 24px !important; margin-bottom: 0px !important; }
+            
+            /* Strip unnecessary padding and margins */
+            #printArea .mb-4 { margin-bottom: 8px !important; }
+            #printArea .mb-5 { margin-bottom: 12px !important; }
+            #printArea .mt-5 { margin-top: 15px !important; }
+            #printArea .py-2 { padding-top: 2px !important; padding-bottom: 2px !important; }
+            #printArea .pb-1 { padding-bottom: 0px !important; }
+            #printArea hr { margin: 5px 0 !important; }
+            #printArea .table-sm th, #printArea .table-sm td { padding: 2px !important; }
+
+            /* Fixes for table getting cut off across pages */
+            table { page-break-inside: auto; width: 100% !important; border-collapse: collapse; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+
+            /* Ensure grids stay intact and don't collapse */
+            .row { display: flex !important; flex-wrap: nowrap !important; margin-left: 0 !important; margin-right: 0 !important; }
+            .col-8 { width: 66.666667% !important; max-width: 66.666667% !important; padding:0 5px!important; }
+            .col-7 { width: 58.333333% !important; max-width: 58.333333% !important; padding:0 5px!important; }
+            .col-5 { width: 41.666667% !important; max-width: 41.666667% !important; padding:0 5px!important; }
+            .col-4 { width: 33.333333% !important; max-width: 33.333333% !important; padding:0 5px!important; }
         }
         
         .formal-text { font-family: "Times New Roman", Times, serif; }
@@ -1129,95 +1158,97 @@ if ($resReserved) {
 
             <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
                 
-                <div class="row mb-4 align-items-center">
-                    <div class="col-8 d-flex align-items-center">
-                        <img src="YOUR_LOGO_HERE.png" alt="Logo" style="height: 80px; width: auto; margin-right: 20px; object-fit: contain;" onerror="this.style.display='none'">
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <div class="d-flex align-items-start">
+                        <img src="YOUR_LOGO_HERE.png" alt="Logo" style="height: 60px; width: auto; margin-right: 15px; margin-top: 5px; object-fit: contain;" onerror="this.style.display='none'">
                         <div>
-                            <h2 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px;">NAM BUILDERS AND SUPPLY CORP.</h2>
-                            <p class="mb-0" style="font-size: 0.85rem;">RNA BUILDING, BRGY SANTIAGO</p>
-                            <p class="mb-0" style="font-size: 0.85rem;">MALVAR, BATANGAS, PHILIPPINES, 4233</p>
-                            <p class="mb-0" style="font-size: 0.85rem;">CONTACT NO: 0963-732-6844 / 0917-834-8811 / 0901-556-352</p>
-                            <p class="mb-0 d-flex align-items-center" style="font-size: 0.85rem;">EMAIL: <span contenteditable="true" class="print-input inline-edit ms-1" style="min-width: 250px; outline: none;" placeholder="Enter email address"></span></p>
+                            <h3 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px; font-size: 1.2rem;">NAM BUILDERS AND SUPPLY CORP.</h3>
+                            <div style="font-size: 0.85rem; line-height: 1.3;">
+                                <span class="fw-bold">MAIN:</span> RNA BUILDING, BRGY SANTIAGO, MALVAR, BATANGAS, 4233<br>
+                                <span class="fw-bold text-primary">SATELLITE OFFICE:</span> <span contenteditable="true" class="print-input inline-edit text-primary fw-bold" style="outline: none; min-width: 250px; display:inline-block;" placeholder="[Type Satellite Office Address Here]"></span><br>
+                                <span class="fw-bold">CONTACT NO:</span> 0963-732-6844 / 0917-834-8811 / 0901-556-352<br>
+                                <span class="fw-bold d-inline-flex align-items-center">EMAIL: <span contenteditable="true" class="print-input inline-edit ms-1" style="min-width: 200px; outline: none;" placeholder="[Enter email address]"></span></span>
+                            </div>
                         </div>
                     </div>
-                    <div class="col-4 text-end">
-                        <h1 class="fw-bolder text-uppercase mt-2" style="color: #475569; font-size: 32px; letter-spacing: 2px;">QUOTATION</h1>
+                    <div class="text-end pt-1">
+                        <h1 class="fw-bolder text-uppercase mb-0" style="color: #475569; font-size: 26px; letter-spacing: 2px;">QUOTATION</h1>
                     </div>
                 </div>
 
-                <hr class="border-dark border-2 opacity-100 mb-4">
+                <hr class="border-dark border-2 opacity-100 mb-2 mt-2">
 
-                <div class="mb-4">
-                    <h6 class="fw-bold mb-3 text-uppercase" style="font-size: 0.95rem;">CUSTOMER DETAIL</h6>
+                <div class="mb-3 mt-3">
+                    <h6 class="fw-bold mb-2 text-uppercase" style="font-size: 0.95rem;">CUSTOMER DETAIL</h6>
                     <div class="row" style="font-size: 0.85rem;">
                         <div class="col-8">
                             <table class="table table-sm table-borderless mb-0">
                                 <tr>
-                                    <th width="150" class="p-0 pb-1 align-top">COMPANY NAME:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100 fw-bold" style="outline: none;">${client}</div></td>
+                                    <th width="150" class="p-0 pb-0 align-top">COMPANY NAME:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100 fw-bold" style="outline: none;">${client}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">COMPANY ADDRESS:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]"></div></td>
+                                    <th class="p-0 pb-0 align-top">COMPANY ADDRESS:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">CONTACT PERSON:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Person]"></div></td>
+                                    <th class="p-0 pb-0 align-top">CONTACT PERSON:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Person]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">CONTACT NUMBER:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td>
+                                    <th class="p-0 pb-0 align-top">CONTACT NUMBER:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">EMAIL ADDRESS:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td>
+                                    <th class="p-0 pb-0 align-top">EMAIL ADDRESS:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 mt-2 d-block align-top">TERMS:</th>
-                                    <td class="p-0 pb-1 mt-2"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td>
+                                    <th class="p-0 pb-0 mt-1 d-block align-top">TERMS:</th>
+                                    <td class="p-0 pb-0 mt-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">TRANSPORT:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td>
+                                    <th class="p-0 pb-0 align-top">TRANSPORT:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td>
                                 </tr>
                             </table>
                         </div>
                         <div class="col-4">
                             <table class="table table-sm table-borderless mb-0">
                                 <tr>
-                                    <th width="130" class="p-0 pb-1 align-top">QUOTATION NO:</th>
-                                    <td class="p-0 pb-1 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td>
+                                    <th width="130" class="p-0 pb-0 align-top">QUOTATION NO:</th>
+                                    <td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">QUOTATION DATE:</th>
-                                    <td class="p-0 pb-1 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td>
+                                    <th class="p-0 pb-0 align-top">QUOTATION DATE:</th>
+                                    <td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 mt-5 d-block align-top">TRANSPORT ID:</th>
-                                    <td class="p-0 pb-1 mt-5"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td>
+                                    <th class="p-0 pb-0 mt-4 d-block align-top">TRANSPORT ID:</th>
+                                    <td class="p-0 pb-0 mt-4"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 align-top">VEHICLE NO:</th>
-                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td>
+                                    <th class="p-0 pb-0 align-top">VEHICLE NO:</th>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 text-muted align-top">INQUIRY REF #:</th>
-                                    <td class="p-0 pb-1 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td>
+                                    <th class="p-0 pb-0 text-muted align-top">INQUIRY REF #:</th>
+                                    <td class="p-0 pb-0 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td>
                                 </tr>
                             </table>
                         </div>
                     </div>
                 </div>
 
-                <table class="table table-bordered border-dark mb-4" style="font-size: 0.85rem;">
+                <table class="table table-bordered border-dark mb-3" style="font-size: 0.85rem;">
                     <thead class="text-center align-middle bg-light fw-bold" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                         <tr>
-                            <th width="8%" class="py-2">S/N</th>
-                            <th width="40%" class="py-2">DESCRIPTION</th>
-                            <th width="12%" class="py-2">UOM</th>
-                            <th width="10%" class="py-2">QUANTITY</th>
-                            <th width="15%" class="py-2">UNIT PRICE</th>
-                            <th width="15%" class="py-2">TOTAL AMOUNT</th>
+                            <th width="8%" class="py-1">S/N</th>
+                            <th width="40%" class="py-1">DESCRIPTION</th>
+                            <th width="12%" class="py-1">UOM</th>
+                            <th width="10%" class="py-1">QUANTITY</th>
+                            <th width="15%" class="py-1">UNIT PRICE</th>
+                            <th width="15%" class="py-1">TOTAL AMOUNT</th>
                         </tr>
                     </thead>
                     <tbody id="previewTbody" class="border-dark align-middle">
@@ -1225,78 +1256,78 @@ if ($resReserved) {
                     </tbody>
                     <tfoot class="border-dark">
                         <tr>
-                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td colspan="5" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
+                            <td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                         <tr>
-                            <td colspan="5" class="text-end py-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
-                            <td class="text-end py-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
+                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                            <td colspan="5" class="text-end py-2 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
-                            <td class="text-end py-2 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td colspan="5" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
+                            <td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
                 </table>
 
-                <div class="row" style="font-size: 0.75rem;">
+                <div class="row" style="font-size: 0.70rem;">
                     <div class="col-7 pe-4">
-                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">PAYMENT DETAILS</h6>
-                        <table class="table table-sm table-borderless mb-3 p-0">
-                            <tr><th width="120" class="p-0">BANK NAME</th><td class="p-0">: BANK OF COMMERCE</td></tr>
+                        <h6 class="fw-bold mb-1" style="font-size: 0.80rem;">PAYMENT DETAILS</h6>
+                        <table class="table table-sm table-borderless mb-2 p-0">
+                            <tr><th width="100" class="p-0">BANK NAME</th><td class="p-0">: BANK OF COMMERCE</td></tr>
                             <tr><th class="p-0">ACCOUNT NAME</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
                             <tr><th class="p-0">ACCOUNT NO.</th><td class="p-0">: 106-20-000556-1</td></tr>
                         </table>
 
-                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">CHECK DETAILS</h6>
-                        <table class="table table-sm table-borderless mb-3 p-0">
-                            <tr><th width="120" class="p-0">Name</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
+                        <h6 class="fw-bold mb-1" style="font-size: 0.80rem;">CHECK DETAILS</h6>
+                        <table class="table table-sm table-borderless mb-2 p-0">
+                            <tr><th width="100" class="p-0">Name</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
                         </table>
 
-                        <h6 class="fw-bold mb-1" style="font-size: 0.85rem;">TERMS AND CONDITION</h6>
+                        <h6 class="fw-bold mb-1 mt-2" style="font-size: 0.80rem;">TERMS AND CONDITION</h6>
                         
-                        <p class="fw-bold mb-0 text-decoration-underline mt-2">Payment Terms</p>
-                        <ul class="mb-2 ps-3">
+                        <p class="fw-bold mb-0 text-decoration-underline mt-1">Payment Terms</p>
+                        <ul class="mb-1 ps-3">
                             <li>If there are any price change NAM BUILDERS AND SUPPLY CORP will resend a quotation prior to process an order.</li>
                             <li>Check or Cash Payment must be collected by NAM BUILDERS AND SUPPLY CORP.</li>
                             <li>Only items stated in this quotation shall be stated in the PURCHASE ORDER.</li>
                         </ul>
 
                         <p class="fw-bold mb-0 text-decoration-underline">Delivery Terms</p>
-                        <ul class="mb-2 ps-3">
+                        <ul class="mb-1 ps-3">
                             <li>Client shall provide weekly projected requirements and <input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 40px;" value="4-6"> days lead time for planning purpose. Any modification in the daily should be communicated twenty-four (24) hours before the schedule.</li>
                             <li>Client Scheduled delivery on Monday-Friday.</li>
                             <li>Client Authorized Representative must be present at the company to acknowledge the products and quantity described on the Delivery Receiving.</li>
                         </ul>
 
                         <p class="fw-bold mb-0 text-decoration-underline">Quality Terms</p>
-                        <ul class="mb-2 ps-3">
+                        <ul class="mb-1 ps-3">
                             <li>Client Authorized Representative must signed the Receiving Inspection Stamp.</li>
                             <li>Items reported as damaged or wrong items must be replaced within <input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 25px;" value="7"> days of the reported date (Receiving Inspection Stamp), provided all eligibility criteria are met.</li>
                         </ul>
 
                         <p class="fw-bold mb-0 text-decoration-underline">Validity</p>
-                        <ul class="mb-4 ps-3">
+                        <ul class="mb-2 ps-3">
                             <li><input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 65px;" value="1 month"> validity effective receipt of this quotation.</li>
                         </ul>
                         
-                        <p class="fw-bold mb-0 text-decoration-underline mt-3">Remarks / Notes</p>
-                        <div contenteditable="true" class="print-input inline-edit w-100 p-2 bg-light border border-secondary border-opacity-25 rounded mt-1" style="outline: none; min-height: 40px;" placeholder="Type additional remarks here...">${remarks ? remarks.replace(/\\n/g, '<br>') : ''}</div>
+                        <p class="fw-bold mb-0 text-decoration-underline mt-2">Remarks / Notes</p>
+                        <div contenteditable="true" class="print-input inline-edit w-100 p-2 bg-light border border-secondary border-opacity-25 rounded mt-1" style="outline: none; min-height: 25px;" placeholder="Type additional remarks here...">${remarks ? remarks.replace(/\\n/g, '<br>') : ''}</div>
                     </div>
 
                     <div class="col-5 border-start border-dark ps-4">
-                        <p class="mb-3 text-justify">Thank you for giving us the opportunity to do business with you.</p>
-                        <p class="mb-5 text-justify">If the terms and conditions in this quotation are acceptable, please indicate your acceptance of them by signing in the space provided below and returning signed counterpart of this proposal to NAM BUILDERS AND SUPPLY CORP. Upon NAM BUILDERS AND SUPPLY CORP received of this quotation, the terms and conditions contained herein shall constitute a binding agreement between your company and NAM BUILDERS AND SUPPLY CORP, effective as of the date NAM BUILDERS AND SUPPLY CORP received.</p>
+                        <p class="mb-2 text-justify">Thank you for giving us the opportunity to do business with you.</p>
+                        <p class="mb-4 text-justify">If the terms and conditions in this quotation are acceptable, please indicate your acceptance of them by signing in the space provided below and returning signed counterpart of this proposal to NAM BUILDERS AND SUPPLY CORP. Upon NAM BUILDERS AND SUPPLY CORP received of this quotation, the terms and conditions contained herein shall constitute a binding agreement between your company and NAM BUILDERS AND SUPPLY CORP, effective as of the date NAM BUILDERS AND SUPPLY CORP received.</p>
                         
-                        <div class="mt-5 pt-3">
+                        <div class="mt-4 pt-2">
                             <p class="mb-0">Sincerely,</p>
-                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-3" value="ALLYSON ASHLEY AGUILERA">
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-2" value="ALLYSON ASHLEY AGUILERA">
                             <div class="small">Sales and Technical Officer</div>
                         </div>
 
-                        <div class="mt-5 pt-3">
+                        <div class="mt-4 pt-2">
                             <p class="mb-0">Conforme:</p>
-                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-3" placeholder="[Client Signature / Name]">
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-2" placeholder="[Client Signature / Name]">
                             <div class="small">Signature over printed name</div>
                         </div>
                     </div>
@@ -1329,26 +1360,25 @@ if ($resReserved) {
             grandTotal += total;
             let sn = String(index + 1).padStart(3, '0');
             
-            // Replaced static input with expandable div and image uploader
             tbodyHtml += `
                 <tr>
-                    <td class="text-center py-2 align-middle">${sn}</td>
-                    <td class="py-2 text-start align-middle">
+                    <td class="text-center py-1 align-middle">${sn}</td>
+                    <td class="py-1 text-start align-middle">
                         <div class="d-flex align-items-start gap-2">
                             <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 45px; height: 45px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 45px; height: 45px; cursor: pointer; border-style: dashed; font-size: 0.75rem;" title="Add Image">
+                                <img src="" class="preview-img d-none" style="width: 35px; height: 35px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 35px; height: 35px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
                                     <i class="fas fa-camera text-muted"></i>
                                     <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
                                 </label>
                             </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 45px;">${q.item.replace(/"/g, '&quot;')}</div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 35px;">${q.item.replace(/"/g, '&quot;')}</div>
                         </div>
                     </td>
-                    <td class="text-center py-2 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
@@ -1369,26 +1399,25 @@ if ($resReserved) {
             grandTotal += total;
             let sn = String(index + 1).padStart(3, '0');
             
-            // Replaced static input with expandable div and image uploader
             tbody += `
                 <tr>
-                    <td class="text-center py-2 align-middle">${sn}</td>
-                    <td class="py-2 text-start align-middle">
+                    <td class="text-center py-1 align-middle">${sn}</td>
+                    <td class="py-1 text-start align-middle">
                         <div class="d-flex align-items-start gap-2">
                             <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 45px; height: 45px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 45px; height: 45px; cursor: pointer; border-style: dashed; font-size: 0.75rem;" title="Add Image">
+                                <img src="" class="preview-img d-none" style="width: 35px; height: 35px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 35px; height: 35px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
                                     <i class="fas fa-camera text-muted"></i>
                                     <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
                                 </label>
                             </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 45px;">${q.item.replace(/"/g, '&quot;')}</div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 35px;">${q.item.replace(/"/g, '&quot;')}</div>
                         </div>
                     </td>
-                    <td class="text-center py-2 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
