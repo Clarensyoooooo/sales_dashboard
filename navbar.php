@@ -172,6 +172,15 @@ $avatar_bg_color = getAvatarColor($user_name);
                         </a>
                     </li>
                 <?php endif; ?>
+                
+                <?php if (function_exists('hasPermission') && hasPermission('manage_finance')): ?>
+                    <li class="nav-item border-start ms-lg-2 ps-lg-3">
+                        <a class="nav-link <?php echo isActive('finance.php'); ?>" href="finance.php">
+                            <i class="fas fa-hand-holding-usd text-success me-1"></i> <span class="text-success fw-bold d-none d-sm-inline">Finance</span>
+                            <span class="d-inline d-sm-none fw-bold text-success">Finance</span>
+                        </a>
+                    </li>
+                <?php endif; ?>
 
                 <?php if ($role_id == 1): ?>
                     <li class="nav-item dropdown">

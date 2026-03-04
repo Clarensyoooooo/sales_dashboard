@@ -1,4 +1,48 @@
-<?php require_once 'config.php'; requireLogin(); requirePermission('manage_sales'); ?>
+<?php 
+require_once 'config.php'; 
+requireLogin(); 
+requirePermission('manage_sales'); 
+
+$conn = getDBConnection();
+
+// --- 1. AUTO-HEAL DATABASE: Add Payment Columns ---
+$checkCol = $conn->query("SHOW COLUMNS FROM sales LIKE 'payment_status'");
+if($checkCol && $checkCol->num_rows == 0) {
+    $conn->query("ALTER TABLE sales ADD COLUMN payment_status VARCHAR(20) DEFAULT 'Pending' AFTER due_date");
+}
+
+$checkDatePaid = $conn->query("SHOW COLUMNS FROM sales LIKE 'date_paid'");
+if($checkDatePaid && $checkDatePaid->num_rows == 0) {
+    $conn->query("ALTER TABLE sales ADD COLUMN date_paid DATETIME DEFAULT NULL AFTER payment_status");
+}
+
+// --- 2. AJAX HANDLER FOR PAYMENT STATUS UPDATES ---
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_payment_status') {
+    header('Content-Type: application/json');
+    $id = intval($_POST['id']);
+    $new_status = $conn->real_escape_string($_POST['status']);
+    
+    // Automatically timestamp the payment
+    $date_paid_sql = ($new_status === 'Paid') ? "NOW()" : "NULL";
+    $sql = "UPDATE sales SET payment_status = '$new_status', date_paid = $date_paid_sql WHERE id = $id";
+    
+    if($conn->query($sql)) {
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => $conn->error]);
+    }
+    exit;
+}
+
+// --- 3. FETCH FINANCE KPIs (For Delivered Items Only) ---
+$kpiSql = "SELECT 
+            SUM(CASE WHEN payment_status = 'Paid' THEN total_nam_amount ELSE 0 END) as collected,
+            SUM(CASE WHEN payment_status = 'Pending' THEN total_nam_amount ELSE 0 END) as outstanding,
+            SUM(CASE WHEN payment_status = 'Pending' AND due_date < CURRENT_DATE() AND due_date IS NOT NULL AND due_date != '0000-00-00' THEN total_nam_amount ELSE 0 END) as overdue
+           FROM sales 
+           WHERE date_delivered IS NOT NULL AND date_delivered != '0000-00-00'";
+$finance_kpi = $conn->query($kpiSql)->fetch_assoc();
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,8 +65,10 @@
         .table-sm td, .table-sm th { font-size: 0.85rem; vertical-align: middle; white-space: nowrap; }
         .col-truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
-        /* Floating Action Button for Mobile (Optional) */
-        .fab { position: fixed; bottom: 20px; right: 20px; z-index: 100; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        /* Alert Row Colors for Finance Tracker */
+        .row-overdue { background-color: #ffe6e6 !important; }
+        .row-neardue { background-color: #fff4cc !important; }
+        .row-paid { opacity: 0.7; background-color: #f1f8f5 !important; }
     </style>
 </head>
 <body class="bg-light">
@@ -31,11 +77,11 @@
 
     <div class="container-fluid mt-4 px-4">
         
-        <div class="row g-3 mb-4">
+        <div class="row g-3 mb-3">
             <div class="col-md-4">
                 <div class="card shadow-sm border-0 kpi-card blue h-100">
                     <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small">Total Records</h6>
+                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Total Records (Filtered)</h6>
                         <h2 class="mb-0 fw-bold text-dark" id="totalRecords">0</h2>
                     </div>
                 </div>
@@ -43,7 +89,7 @@
             <div class="col-md-4">
                 <div class="card shadow-sm border-0 kpi-card orange h-100">
                     <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small">Pending Delivery</h6>
+                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Pending Delivery</h6>
                         <h2 class="mb-0 fw-bold text-warning" id="pendingCount">0</h2>
                     </div>
                 </div>
@@ -51,8 +97,35 @@
             <div class="col-md-4">
                 <div class="card shadow-sm border-0 kpi-card green h-100">
                     <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small">Total Sales (Filtered)</h6>
+                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Total Sales (Filtered)</h6>
                         <h2 class="mb-0 fw-bold text-success" id="filteredSales">₱0.00</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card border-success h-100 bg-success bg-opacity-10">
+                    <div class="card-body">
+                        <h6 class="text-success text-uppercase fw-bold small mb-1"><i class="fas fa-check-circle me-1"></i> Total Collected (Paid)</h6>
+                        <h4 class="mb-0 fw-bold text-success">₱<?= number_format($finance_kpi['collected'] ?? 0, 2) ?></h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card border-primary h-100 bg-primary bg-opacity-10">
+                    <div class="card-body">
+                        <h6 class="text-primary text-uppercase fw-bold small mb-1"><i class="fas fa-hand-holding-usd me-1"></i> Outstanding Receivables</h6>
+                        <h4 class="mb-0 fw-bold text-primary">₱<?= number_format($finance_kpi['outstanding'] ?? 0, 2) ?></h4>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 kpi-card border-danger h-100 bg-danger bg-opacity-10">
+                    <div class="card-body">
+                        <h6 class="text-danger text-uppercase fw-bold small mb-1"><i class="fas fa-exclamation-triangle me-1"></i> Overdue Collections</h6>
+                        <h4 class="mb-0 fw-bold text-danger">₱<?= number_format($finance_kpi['overdue'] ?? 0, 2) ?></h4>
                     </div>
                 </div>
             </div>
@@ -64,7 +137,7 @@
             <div class="card-body bg-white py-3">
                 <div class="row g-2 align-items-end">
                     <div class="col-md-2">
-                        <label class="form-label small fw-bold text-muted">Status</label>
+                        <label class="form-label small fw-bold text-muted">Delivery</label>
                         <select id="filterStatus" class="form-select form-select-sm" onchange="applyFilters()">
                             <option value="">All Statuses</option>
                             <option value="pending">Pending Delivery</option>
@@ -73,36 +146,39 @@
                             <option value="reserved">Reserved</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold text-muted">Date Range</label>
-                        <div class="input-group input-group-sm">
-                            <input type="date" id="dateFrom" class="form-control">
-                            <span class="input-group-text">-</span>
-                            <input type="date" id="dateTo" class="form-control">
-                        </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-bold text-muted">Payment</label>
+                        <select id="filterPayment" class="form-select form-select-sm" onchange="applyFilters()">
+                            <option value="">All Payments</option>
+                            <option value="Pending">Unpaid (Pending)</option>
+                            <option value="Paid">Paid</option>
+                        </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small fw-bold text-muted">Company</label>
-                        <select id="filterCompany" class="form-select form-select-sm">
+                        <select id="filterCompany" class="form-select form-select-sm" onchange="applyFilters()">
                             <option value="">All Companies</option>
                         </select>
                     </div>
                     <div class="col-md-2">
                         <label class="form-label small fw-bold text-muted">Category</label>
-                        <select id="filterCategory" class="form-select form-select-sm">
+                        <select id="filterCategory" class="form-select form-select-sm" onchange="applyFilters()">
                             <option value="">All Categories</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-4">
                         <label class="form-label small fw-bold text-muted">Search</label>
                         <div class="input-group input-group-sm">
-                            <input type="text" id="searchItem" class="form-control" placeholder="Search item, PO, remarks..." onkeyup="applyFilters()">
-                            <button class="btn btn-primary" onclick="applyFilters()" type="button">
-                                <i class="fas fa-search"></i>
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="clearFilters()" type="button" title="Reset">
-                                <i class="fas fa-undo"></i>
-                            </button>
+                            <input type="text" id="searchItem" class="form-control" placeholder="Item, PO, Remarks..." onkeyup="applyFilters()">
+                            <button class="btn btn-outline-secondary" onclick="clearFilters()" type="button" title="Reset"><i class="fas fa-undo"></i></button>
+                        </div>
+                    </div>
+                    <div class="col-12 mt-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="small fw-bold text-muted">Date Range:</span>
+                            <input type="date" id="dateFrom" class="form-control form-control-sm" style="width: 140px;" onchange="applyFilters()">
+                            <span class="text-muted small">to</span>
+                            <input type="date" id="dateTo" class="form-control form-control-sm" style="width: 140px;" onchange="applyFilters()">
                         </div>
                     </div>
                 </div>
@@ -124,7 +200,7 @@
                                 <th class="ps-3" style="width: 40px;">
                                     <input class="form-check-input border-secondary" type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
                                 </th>
-                                <th>Status</th>
+                                <th>Delivery Status</th>
                                 <th>Date</th>
                                 <th>S/N</th>
                                 <th>PO No.</th>
@@ -144,7 +220,7 @@
                                 <th>Supplier</th>
                                 <th>Delivered</th>
                                 <th>Pay Term</th>
-                                <th>Due Date</th>
+                                <th>Due Tracker</th>
                                 <th>SI No.</th>
                                 <th>Inv No.</th>
                                 <th>Remarks</th>
@@ -361,9 +437,8 @@
         let filteredRecords = [];
         let currentPage = 1;
         const perPage = 50;
-        let itemStatus = {}; // Tracks exactly how many of an item were delivered
+        let itemStatus = {}; 
 
-        // Modal Instances
         let editModal, bulkDeliverModal;
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -400,38 +475,36 @@
                 const data = await res.json();
                 allRecords = data.records;
                 
-                // Track quantities for partial delivery
                 itemStatus = {};
                 allRecords.forEach(r => {
-                    // Grouping key: Company + PO + Item Name ensures we match the exact item
                     const key = r.company + '|' + (r.po_number || 'NO_PO') + '|' + r.item;
-                    
-                    if(!itemStatus[key]) {
-                        itemStatus[key] = { total: 0, delivered: 0 };
-                    }
-                    
+                    if(!itemStatus[key]) { itemStatus[key] = { total: 0, delivered: 0 }; }
                     const qty = parseFloat(r.quantity_requested) || 0;
                     itemStatus[key].total += qty;
-                    
                     if(r.date_delivered && r.date_delivered !== '0000-00-00') {
                         itemStatus[key].delivered += qty;
                     }
                 });
 
-                // Populate filters
+                // Safely apply options to dropdowns, if they exist
                 const compSelect = document.getElementById('filterCompany');
                 const catSelect = document.getElementById('filterCategory');
                 
-                compSelect.innerHTML = '<option value="">All Companies</option>';
-                catSelect.innerHTML = '<option value="">All Categories</option>';
+                if (compSelect) compSelect.innerHTML = '<option value="">All Companies</option>';
+                if (catSelect) catSelect.innerHTML = '<option value="">All Categories</option>';
 
                 data.companies.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c; opt.textContent = c; compSelect.appendChild(opt);
+                    if (compSelect) {
+                        const opt = document.createElement('option');
+                        opt.value = c; opt.textContent = c; compSelect.appendChild(opt);
+                    }
                 });
+                
                 data.categories.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c; opt.textContent = c; catSelect.appendChild(opt);
+                    if (catSelect) {
+                        const opt = document.createElement('option');
+                        opt.value = c; opt.textContent = c; catSelect.appendChild(opt);
+                    }
                 });
 
                 applyFilters();
@@ -442,12 +515,14 @@
         }
 
         function applyFilters() {
-            const status = document.getElementById('filterStatus').value;
-            const company = document.getElementById('filterCompany').value;
-            const category = document.getElementById('filterCategory').value;
-            const search = document.getElementById('searchItem').value.toLowerCase();
-            const dFrom = document.getElementById('dateFrom').value;
-            const dTo = document.getElementById('dateTo').value;
+            // Safely fetch filter values using optional chaining
+            const status = document.getElementById('filterStatus')?.value || '';
+            const payStatus = document.getElementById('filterPayment')?.value || '';
+            const company = document.getElementById('filterCompany')?.value || '';
+            const category = document.getElementById('filterCategory')?.value || '';
+            const search = document.getElementById('searchItem')?.value.toLowerCase() || '';
+            const dFrom = document.getElementById('dateFrom')?.value || '';
+            const dTo = document.getElementById('dateTo')?.value || '';
 
             filteredRecords = allRecords.filter(r => {
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
@@ -457,14 +532,16 @@
                 const stat = itemStatus[key];
 
                 let isPartial = false;
-                if (!isDelivered && stat && stat.delivered > 0) {
-                    isPartial = true;
-                }
+                if (!isDelivered && stat && stat.delivered > 0) isPartial = true;
 
+                // Delivery Filter
                 if (status === 'pending' && isDelivered) return false;
                 if (status === 'delivered' && !isDelivered) return false;
                 if (status === 'partial' && !isPartial) return false;
                 if (status === 'reserved' && !isReserved) return false;
+
+                // Payment Filter
+                if (payStatus && (r.payment_status || 'Pending') !== payStatus) return false;
 
                 if (company && r.company !== company) return false;
                 if (category && r.category !== category) return false;
@@ -481,7 +558,6 @@
             });
 
             document.getElementById('totalRecords').textContent = filteredRecords.length.toLocaleString();
-            
             const totalSales = filteredRecords.reduce((sum, r) => sum + parseFloat(r.total_nam_amount || 0), 0);
             document.getElementById('filteredSales').textContent = formatCurrency(totalSales);
 
@@ -493,12 +569,11 @@
         }
 
         function clearFilters() {
-            document.getElementById('filterStatus').value = '';
-            document.getElementById('filterCompany').value = '';
-            document.getElementById('filterCategory').value = '';
-            document.getElementById('searchItem').value = '';
-            document.getElementById('dateFrom').value = '';
-            document.getElementById('dateTo').value = '';
+            // Safely reset elements
+            ['filterStatus', 'filterPayment', 'filterCompany', 'filterCategory', 'searchItem', 'dateFrom', 'dateTo'].forEach(id => {
+                const el = document.getElementById(id);
+                if(el) el.value = '';
+            });
             applyFilters();
         }
 
@@ -524,6 +599,10 @@
             const end = start + perPage;
             const pageData = filteredRecords.slice(start, end);
 
+            // Date setup for the Finance "Due Date Tracker"
+            const today = new Date();
+            today.setHours(0,0,0,0);
+
             pageData.forEach(r => {
                 const tr = document.createElement('tr');
                 const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
@@ -533,28 +612,63 @@
                 const stat = itemStatus[key];
 
                 let isPartial = false;
-                if (!isDelivered && stat && stat.delivered > 0) {
-                    isPartial = true;
-                }
+                if (!isDelivered && stat && stat.delivered > 0) isPartial = true;
 
+                // --- 1. DELIVERY BADGE ---
                 let statusHtml = '';
                 if (isDelivered) {
-                    statusHtml = `<span class="badge rounded-pill bg-success"><i class="fas fa-check me-1"></i>Delivered</span>`;
+                    statusHtml = `<span class="badge rounded-pill bg-success mb-1"><i class="fas fa-check me-1"></i>Delivered</span>`;
                 } else if (isPartial) {
-                    // NEW DYNAMIC PARTIAL BADGE
-                    statusHtml = `<span class="badge rounded-pill bg-info text-dark" title="${stat.delivered} out of ${stat.total} delivered">
-                                    <i class="fas fa-truck-loading me-1"></i>Partial (${stat.delivered}/${stat.total})
-                                  </span>`;
+                    statusHtml = `<span class="badge rounded-pill bg-info text-dark mb-1"><i class="fas fa-truck-loading me-1"></i>Partial</span>`;
                 } else if (isReserved) {
-                    statusHtml = `<span class="badge rounded-pill bg-danger"><i class="fas fa-bookmark me-1"></i>Reserved</span>`;
+                    statusHtml = `<span class="badge rounded-pill bg-danger mb-1"><i class="fas fa-bookmark me-1"></i>Reserved</span>`;
                 } else {
-                    statusHtml = `<span class="badge rounded-pill bg-warning text-dark"><i class="fas fa-clock me-1"></i>Pending</span>`;
+                    statusHtml = `<span class="badge rounded-pill bg-warning text-dark mb-1"><i class="fas fa-clock me-1"></i>Pending</span>`;
+                }
+
+                // --- 2. FINANCE / PAYMENT BADGE (Color Magic) ---
+                let payStatus = r.payment_status || 'Pending';
+                let dueStr = r.due_date;
+                let dueBadge = '';
+                let rowClass = '';
+                let payActionBtn = '';
+
+                if (isDelivered) {
+                    if (payStatus === 'Paid') {
+                        rowClass = 'row-paid';
+                        dueBadge = `<span class="badge border border-success text-success"><i class="fas fa-check-circle me-1"></i>Paid</span>`;
+                        // The "Revert" button is added to the Actions column
+                        payActionBtn = `<button class="btn btn-sm btn-outline-secondary" onclick="togglePayment(${r.id}, 'Pending')" title="Revert Payment"><i class="fas fa-undo"></i></button>`;
+                    } else {
+                        // The "Mark Paid" button
+                        payActionBtn = `<button class="btn btn-sm btn-success shadow-sm fw-bold" onclick="togglePayment(${r.id}, 'Paid')" title="Mark as Paid"><i class="fas fa-check-double"></i></button>`;
+
+                        if (!dueStr || dueStr === '0000-00-00') {
+                            dueBadge = '<span class="badge bg-secondary">No Due Date</span>';
+                        } else {
+                            const dueObj = new Date(dueStr);
+                            dueObj.setHours(0,0,0,0);
+                            const diffTime = dueObj - today;
+                            const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                            if (days < 0) {
+                                rowClass = 'row-overdue';
+                                dueBadge = `<span class="badge bg-danger"><i class="fas fa-exclamation-circle me-1"></i>Overdue (${Math.abs(days)}d)</span>`;
+                            } else if (days <= 7) {
+                                rowClass = 'row-neardue';
+                                dueBadge = `<span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Due in ${days}d</span>`;
+                            } else {
+                                dueBadge = `<span class="badge bg-info text-dark">Due in ${days}d</span>`;
+                            }
+                        }
+                    }
                 }
 
                 const checkboxHtml = !isDelivered 
                     ? `<input class="form-check-input border-secondary row-checkbox" type="checkbox" value="${r.id}" onchange="updateSelectedCount()">` 
                     : `<input class="form-check-input" type="checkbox" disabled>`;
 
+                tr.className = rowClass;
                 tr.innerHTML = `
                     <td class="ps-3">${checkboxHtml}</td>
                     <td>${statusHtml}</td>
@@ -577,12 +691,17 @@
                     <td>${r.supplier || ''}</td>
                     <td class="${isDelivered ? 'text-success fw-bold' : 'text-muted'}">${isDelivered ? r.date_delivered : '-'}</td>
                     <td>${r.payment_term || ''}</td>
-                    <td>${r.due_date || ''}</td>
+                    <td class="text-center">
+                        <div class="mb-1 text-dark small">${(!dueStr || dueStr === '0000-00-00') ? '--' : r.due_date}</div>
+                        ${dueBadge}
+                    </td>
                     <td>${r.si_number || ''}</td>
                     <td>${r.sales_invoice_no || ''}</td>
                     <td class="col-truncate" title="${r.remarks || ''}">${r.remarks || ''}</td>
+                    
                     <td class="text-end bg-white" style="position:sticky; right:0;">
                         <div class="btn-group btn-group-sm">
+                            ${payActionBtn}
                             <button class="btn btn-outline-warning" onclick="toggleReserve(${r.id}, ${isReserved ? 0 : 1})" title="${isReserved ? 'Remove Reservation' : 'Reserve Item'}">
                                 <i class="${isReserved ? 'fas' : 'far'} fa-bookmark"></i>
                             </button>
@@ -610,6 +729,28 @@
                 if(!cb.disabled) cb.checked = source.checked;
             });
             updateSelectedCount();
+        }
+
+        // --- NEW PAYMENT AJAX TOGGLE ---
+        async function togglePayment(id, newStatus) {
+            if (!confirm(`Are you sure you want to mark this item as ${newStatus}?`)) return;
+            try {
+                const formData = new FormData();
+                formData.append('action', 'toggle_payment_status');
+                formData.append('id', id);
+                formData.append('status', newStatus);
+
+                const res = await fetch('records.php', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if(data.success) {
+                    window.location.reload(); // Quickest way to refresh the KPI cards up top!
+                } else {
+                    showAlert("Error updating payment status.", "danger");
+                }
+            } catch(e) {
+                showAlert("Network error.", "danger");
+            }
         }
 
         function openBulkDeliverModal() {

@@ -202,8 +202,6 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $n_price = floatval($_POST['edit_n_price']);
     $total = $qty * $n_price;
     
-    // NOTE: Editing an "Approved" quote's quantity would require stock adjustments.
-    // For simplicity and safety, we allow standard updates. If major edits are needed, delete and recreate.
     $stmt = $conn->prepare("UPDATE quotations SET quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
     $stmt->bind_param("idddi", $qty, $s_price, $n_price, $total, $id);
     $stmt->execute();
@@ -217,7 +215,6 @@ $next_ref_default = getNextQuoteRef($conn);
 // --- PRE-FILL COMPANY DATA ---
 $clientData = [];
 
-// 1. Fetch from past quotations (to get previous quote remarks/po/terms)
 $resQuotes = $conn->query("SELECT company, po_number, payment_term, remarks FROM quotations WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
 if ($resQuotes) {
     while($row = $resQuotes->fetch_assoc()) {
@@ -232,7 +229,6 @@ if ($resQuotes) {
     }
 }
 
-// 2. Fetch from past sales (to expand the list of known companies and their standard terms)
 $resSales = $conn->query("SELECT company, payment_term FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
 if ($resSales) {
     while($row = $resSales->fetch_assoc()) {
@@ -246,8 +242,7 @@ if ($resSales) {
         }
     }
 }
-ksort($clientData); // Alphabetize the client list
-
+ksort($clientData); 
 
 // --- FETCH RESERVED QUANTITIES PER ITEM ---
 $reservedData = [];
@@ -257,7 +252,6 @@ if ($resReserved) {
         $reservedData[$r['item']] = (int)$r['total_reserved'];
     }
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -275,9 +269,12 @@ if ($resReserved) {
         .print-input:focus { border-bottom: 1px solid #0d6efd; }
         .preview-box { border: 1px solid #dee2e6; background: #fff; padding: 0; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
 
-        /* Highlight editable inline inputs in preview (Turns black when printed) */
+        /* Highlight editable inline inputs in preview */
         .inline-edit { color: #0d6efd; cursor: pointer; }
         .inline-edit:focus { color: #000; background-color: #f8f9fa; border-bottom: 1px solid #0d6efd !important; }
+
+        /* Magic Placeholder for ContentEditable Divs */
+        [contenteditable]:empty:before { content: attr(placeholder); color: #adb5bd; pointer-events: none; display: block; font-style: italic; }
 
         /* Print Specific CSS */
         @media print {
@@ -286,7 +283,8 @@ if ($resReserved) {
             .print-input { border-bottom: none !important; color: #000 !important; }
             .inline-edit { color: #000 !important; } 
             .print-input::-webkit-input-placeholder { color: transparent; }
-            /* Hide the spinner arrows on number inputs during print */
+            [contenteditable]:empty:before { display: none !important; }
+            
             input[type=number]::-webkit-inner-spin-button, 
             input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
             -webkit-print-color-adjust: exact;
@@ -497,11 +495,9 @@ if ($resReserved) {
                     <?php
                     $conn = getDBConnection();
                     $grouped = [];
-                    // SMART GROUPING: Sort by Company, then newest Date first!
                     $res = $conn->query("SELECT * FROM quotations ORDER BY company ASC, date DESC, id DESC");
                     
                     while($row = $res->fetch_assoc()) {
-                        // Group first by Company, then sub-group by Quote Reference
                         $ref = $row['quote_ref'] ? $row['quote_ref'] : 'Unknown Ref';
                         $grouped[$row['company']][$ref][] = $row;
                     }
@@ -536,7 +532,7 @@ if ($resReserved) {
                             <div class="accordion-body p-0 bg-light">
                                 
                                 <?php foreach($refs as $ref => $quotes): 
-                                    $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); // Format the date nicely
+                                    $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); 
                                 ?>
                                 <div class="p-3 border-bottom bg-white shadow-sm mb-2 rounded mx-2 mt-2">
                                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -726,9 +722,8 @@ if ($resReserved) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     let productMap = new Map();
-    let quoteQueue = []; // Holds items for the current batch
+    let quoteQueue = []; 
     
-    // Pass PHP client and reserved data to Javascript
     const clientData = <?php echo json_encode($clientData); ?>;
     const reservedData = <?php echo json_encode($reservedData); ?>;
 
@@ -746,18 +741,15 @@ if ($resReserved) {
                     const reserved = reservedData[p.name] || 0;
                     const available = stock - reserved;
                     
-                    // Added Available & Reserved to the search list label
                     opt.label = `Avail: ${available} (Res: ${reserved}) | ₱${p.nam_price}`;
                     dl.appendChild(opt);
                 });
             });
 
-        // Initialize Price Calculators for both forms
         attachPriceCalculators('s_price', 'n_price', 'markup_pct', 'margin_pct', 'quantity', 'total_display');
         attachPriceCalculators('edit_s_price', 'edit_n_price', 'edit_markup_pct', 'edit_margin_pct', 'edit_quantity', 'edit_total_display');
     });
 
-    // Handle Client Company Pre-fill Event
     document.getElementById('company').addEventListener('input', function() {
         const compName = this.value;
         if (clientData.hasOwnProperty(compName)) {
@@ -774,7 +766,6 @@ if ($resReserved) {
         }
     });
 
-    // Handle Item Selection Auto-fill & Stock Tracking
     document.getElementById('itemInput').addEventListener('input', function() {
         const p = productMap.get(this.value);
         if (p) {
@@ -782,7 +773,6 @@ if ($resReserved) {
             document.getElementById('n_price').value = p.nam_price;
             document.getElementById('categoryField').value = p.category_code || 'General';
             
-            // --- STOCK TRACKER COMPUTATION ---
             const stock = parseInt(p.current_stock) || 0;
             const reserved = reservedData[p.name] || 0;
             const available = stock - reserved;
@@ -791,19 +781,15 @@ if ($resReserved) {
             document.getElementById('infoReserved').innerText = reserved;
             document.getElementById('infoAvailable').innerText = available;
             
-            // Show the Tracker box
             document.getElementById('stockTracker').style.display = 'block';
             
-            // Trigger calculation so markup/margin auto-fills & computes "Left After Quote"
             document.getElementById('n_price').dispatchEvent(new Event('input'));
             document.getElementById('quantity').dispatchEvent(new Event('input'));
         } else {
-            // Hide if invalid item
             document.getElementById('stockTracker').style.display = 'none';
         }
     });
 
-    // Update the "Left After This Quote" computation dynamically when user types quantity
     document.getElementById('quantity').addEventListener('input', function() {
         if (document.getElementById('stockTracker').style.display !== 'none') {
             const reqQty = parseFloat(this.value) || 0;
@@ -813,7 +799,6 @@ if ($resReserved) {
             const leftEl = document.getElementById('infoLeft');
             leftEl.innerText = left;
             
-            // Color code it based on if it goes into the negative
             if (left < 0) {
                 leftEl.classList.remove('text-primary');
                 leftEl.classList.add('text-danger');
@@ -824,7 +809,6 @@ if ($resReserved) {
         }
     });
 
-    // --- BUY AGAIN FUNCTION (SINGLE ITEM) ---
     function buyAgain(row) {
         if (!document.getElementById('company').value) {
             document.getElementById('company').value = row.company;
@@ -845,7 +829,6 @@ if ($resReserved) {
         document.getElementById('queueCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    // --- BATCH BUY AGAIN FUNCTION (ENTIRE QUOTE) ---
     function batchBuyAgain(quotesArray) {
         if (!quotesArray || quotesArray.length === 0) return;
         
@@ -879,7 +862,6 @@ if ($resReserved) {
         }
     }
 
-    // --- BATCH QUEUE LOGIC ---
     function addToQuote() {
         const item = document.getElementById('itemInput').value;
         const qty = parseFloat(document.getElementById('quantity').value) || 0;
@@ -900,7 +882,6 @@ if ($resReserved) {
             category: category
         });
 
-        // Reset the form fields and hide the tracker
         document.getElementById('itemInput').value = '';
         document.getElementById('quantity').value = '1';
         document.getElementById('s_price').value = '';
@@ -951,7 +932,6 @@ if ($resReserved) {
         renderQueue();
     }
 
-    // UPDATED FUNCTION: Now accepts the status mode directly from the button click
     async function saveQuoteBatch(statusMode = 'Pending') {
         if (quoteQueue.length === 0) return;
 
@@ -969,7 +949,7 @@ if ($resReserved) {
 
         const payload = {
             action: 'create_quote_batch',
-            status: statusMode, // Passes "Reserved" or "Pending" to the API
+            status: statusMode,
             header: {
                 date: date,
                 quote_ref: ref,
@@ -999,7 +979,6 @@ if ($resReserved) {
         }
     }
 
-    // --- PRICING CALCULATOR LOGIC ---
     function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId, qtyId, totalId) {
         const sPrice = document.getElementById(sPriceId);
         const nPrice = document.getElementById(nPriceId);
@@ -1055,7 +1034,6 @@ if ($resReserved) {
         if(qty) qty.addEventListener('input', updateTotals);
     }
 
-    // --- EDIT MODAL LOGIC ---
     function openEditModal(row) {
         document.getElementById('edit_id').value = row.id;
         document.getElementById('edit_item_display').value = row.item;
@@ -1064,7 +1042,6 @@ if ($resReserved) {
         document.getElementById('edit_n_price').value = parseFloat(row.nam_unit_price).toFixed(2);
         
         document.getElementById('edit_n_price').dispatchEvent(new Event('input'));
-        
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
@@ -1114,15 +1091,32 @@ if ($resReserved) {
         document.getElementById('prevGrandTotal').innerText = '₱' + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
     }
 
+    // --- IMAGE UPLOAD LOGIC FOR PRINT PREVIEW ---
+    window.loadPreviewImg = function(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const wrapper = input.closest('.item-img-wrapper');
+                const img = wrapper.querySelector('.preview-img');
+                const lbl = wrapper.querySelector('.upload-lbl');
+                
+                img.src = e.target.result;
+                img.classList.remove('d-none');
+                img.classList.add('d-print-block');
+                lbl.classList.add('d-none');
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
     // --- FORMAL DOCUMENT PRINT RENDERING ---
     function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
-        
         let vatable = grandTotal / 1.12;
         let vatAmt = grandTotal - vatable;
 
         const html = `
             <div class="d-print-none alert alert-info py-2 d-flex justify-content-between align-items-center mb-4 border border-info shadow-sm">
-                <span class="small fw-bold text-dark"><i class="fas fa-magic me-1"></i> Live Calculations Active: You can edit Quantities and Prices directly below.</span>
+                <span class="small fw-bold text-dark"><i class="fas fa-magic me-1"></i> Live Editing: Click any text to type. Click the dashed box to add item images!</span>
                 <div class="d-flex align-items-center gap-2">
                     <label class="small fw-bold mb-0 text-dark text-nowrap">VAT Mode:</label>
                     <select id="prevVatType" class="form-select form-select-sm fw-bold border-info text-primary" style="width: 180px;" onchange="recalcPreview()">
@@ -1134,13 +1128,17 @@ if ($resReserved) {
             </div>
 
             <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
-                <div class="row mb-4">
-                    <div class="col-8">
-                        <h2 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px;">NAM BUILDERS AND SUPPLY CORP.</h2>
-                        <p class="mb-0" style="font-size: 0.85rem;">RNA BUILDING, BRGY SANTIAGO</p>
-                        <p class="mb-0" style="font-size: 0.85rem;">MALVAR, BATANGAS, PHILIPPINES, 4233</p>
-                        <p class="mb-0" style="font-size: 0.85rem;">CONTACT NO: 0963-732-6844 / 0917-834-8811 / 0901-556-352</p>
-                        <p class="mb-0" style="font-size: 0.85rem;">EMAIL: <input type="text" class="print-input inline-edit" style="width: 250px;" placeholder="Enter email"></p>
+                
+                <div class="row mb-4 align-items-center">
+                    <div class="col-8 d-flex align-items-center">
+                        <img src="YOUR_LOGO_HERE.png" alt="Logo" style="height: 80px; width: auto; margin-right: 20px; object-fit: contain;" onerror="this.style.display='none'">
+                        <div>
+                            <h2 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px;">NAM BUILDERS AND SUPPLY CORP.</h2>
+                            <p class="mb-0" style="font-size: 0.85rem;">RNA BUILDING, BRGY SANTIAGO</p>
+                            <p class="mb-0" style="font-size: 0.85rem;">MALVAR, BATANGAS, PHILIPPINES, 4233</p>
+                            <p class="mb-0" style="font-size: 0.85rem;">CONTACT NO: 0963-732-6844 / 0917-834-8811 / 0901-556-352</p>
+                            <p class="mb-0 d-flex align-items-center" style="font-size: 0.85rem;">EMAIL: <span contenteditable="true" class="print-input inline-edit ms-1" style="min-width: 250px; outline: none;" placeholder="Enter email address"></span></p>
+                        </div>
                     </div>
                     <div class="col-4 text-end">
                         <h1 class="fw-bolder text-uppercase mt-2" style="color: #475569; font-size: 32px; letter-spacing: 2px;">QUOTATION</h1>
@@ -1155,56 +1153,56 @@ if ($resReserved) {
                         <div class="col-8">
                             <table class="table table-sm table-borderless mb-0">
                                 <tr>
-                                    <th width="150" class="p-0 pb-1">COMPANY NAME:</th>
-                                    <td class="p-0 pb-1 fw-bold"><input type="text" class="print-input inline-edit w-100 fw-bold" value="${client}"></td>
+                                    <th width="150" class="p-0 pb-1 align-top">COMPANY NAME:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100 fw-bold" style="outline: none;">${client}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">COMPANY ADDRESS:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Address]"></td>
+                                    <th class="p-0 pb-1 align-top">COMPANY ADDRESS:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">CONTACT PERSON:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Contact Person]"></td>
+                                    <th class="p-0 pb-1 align-top">CONTACT PERSON:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Person]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">CONTACT NUMBER:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Contact Number]"></td>
+                                    <th class="p-0 pb-1 align-top">CONTACT NUMBER:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">EMAIL ADDRESS:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Email]"></td>
+                                    <th class="p-0 pb-1 align-top">EMAIL ADDRESS:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 mt-2 d-block">TERMS:</th>
-                                    <td class="p-0 pb-1 mt-2"><input type="text" class="print-input inline-edit w-100" value="${term}"></td>
+                                    <th class="p-0 pb-1 mt-2 d-block align-top">TERMS:</th>
+                                    <td class="p-0 pb-1 mt-2"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">TRANSPORT:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Enter Transport]"></td>
+                                    <th class="p-0 pb-1 align-top">TRANSPORT:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td>
                                 </tr>
                             </table>
                         </div>
                         <div class="col-4">
                             <table class="table table-sm table-borderless mb-0">
                                 <tr>
-                                    <th width="130" class="p-0 pb-1">QUOTATION NO:</th>
-                                    <td class="p-0 pb-1 fw-bold">${ref}</td>
+                                    <th width="130" class="p-0 pb-1 align-top">QUOTATION NO:</th>
+                                    <td class="p-0 pb-1 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">QUOTATION DATE:</th>
-                                    <td class="p-0 pb-1 fw-bold">${date}</td>
+                                    <th class="p-0 pb-1 align-top">QUOTATION DATE:</th>
+                                    <td class="p-0 pb-1 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 mt-5 d-block">TRANSPORT ID:</th>
-                                    <td class="p-0 pb-1 mt-5"><input type="text" class="print-input inline-edit w-100" placeholder="[Transport ID]"></td>
+                                    <th class="p-0 pb-1 mt-5 d-block align-top">TRANSPORT ID:</th>
+                                    <td class="p-0 pb-1 mt-5"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1">VEHICLE NO:</th>
-                                    <td class="p-0 pb-1"><input type="text" class="print-input inline-edit w-100" placeholder="[Vehicle No]"></td>
+                                    <th class="p-0 pb-1 align-top">VEHICLE NO:</th>
+                                    <td class="p-0 pb-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td>
                                 </tr>
                                 <tr>
-                                    <th class="p-0 pb-1 text-muted">INQUIRY REF #:</th>
-                                    <td class="p-0 pb-1 text-muted"><input type="text" class="print-input inline-edit w-100" value="${po}"></td>
+                                    <th class="p-0 pb-1 text-muted align-top">INQUIRY REF #:</th>
+                                    <td class="p-0 pb-1 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td>
                                 </tr>
                             </table>
                         </div>
@@ -1282,7 +1280,8 @@ if ($resReserved) {
                             <li><input type="text" class="print-input inline-edit text-center fw-bold p-0 m-0" style="width: 65px;" value="1 month"> validity effective receipt of this quotation.</li>
                         </ul>
                         
-                        ${remarks ? `<div class="p-2 mt-2 border border-dark rounded bg-light"><strong class="d-block mb-1">Additional Remarks:</strong>${remarks.replace(/\\n/g, '<br>')}</div>` : ''}
+                        <p class="fw-bold mb-0 text-decoration-underline mt-3">Remarks / Notes</p>
+                        <div contenteditable="true" class="print-input inline-edit w-100 p-2 bg-light border border-secondary border-opacity-25 rounded mt-1" style="outline: none; min-height: 40px;" placeholder="Type additional remarks here...">${remarks ? remarks.replace(/\\n/g, '<br>') : ''}</div>
                     </div>
 
                     <div class="col-5 border-start border-dark ps-4">
@@ -1309,7 +1308,6 @@ if ($resReserved) {
         new bootstrap.Modal(document.getElementById('previewModal')).show();
     }
 
-    // Preview Multiple Items from Queue (Before Saving)
     function showPreviewNew() {
         if (quoteQueue.length === 0) {
             alert("Please add at least one item to the Quote Draft before previewing.");
@@ -1331,14 +1329,26 @@ if ($resReserved) {
             grandTotal += total;
             let sn = String(index + 1).padStart(3, '0');
             
+            // Replaced static input with expandable div and image uploader
             tbodyHtml += `
                 <tr>
-                    <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold"><input type="text" class="print-input inline-edit w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
-                    <td class="text-center py-2"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-center py-2 align-middle">${sn}</td>
+                    <td class="py-2 text-start align-middle">
+                        <div class="d-flex align-items-start gap-2">
+                            <div class="position-relative item-img-wrapper d-print-inline-block">
+                                <img src="" class="preview-img d-none" style="width: 45px; height: 45px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 45px; height: 45px; cursor: pointer; border-style: dashed; font-size: 0.75rem;" title="Add Image">
+                                    <i class="fas fa-camera text-muted"></i>
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                </label>
+                            </div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 45px;">${q.item.replace(/"/g, '&quot;')}</div>
+                        </div>
+                    </td>
+                    <td class="text-center py-2 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-2 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
@@ -1346,7 +1356,6 @@ if ($resReserved) {
         renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks);
     }
 
-    // Print Multiple Items from Saved Group
     function printGroupedQuote(quotes, company, ref) {
         let tbody = '';
         let grandTotal = 0;
@@ -1360,14 +1369,26 @@ if ($resReserved) {
             grandTotal += total;
             let sn = String(index + 1).padStart(3, '0');
             
+            // Replaced static input with expandable div and image uploader
             tbody += `
                 <tr>
-                    <td class="text-center py-2">${sn}</td>
-                    <td class="py-2 fw-bold"><input type="text" class="print-input inline-edit w-100 p-0 m-0 fw-bold" value="${q.item.replace(/"/g, '&quot;')}"></td>
-                    <td class="text-center py-2"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-2"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-2 fw-bold"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-center py-2 align-middle">${sn}</td>
+                    <td class="py-2 text-start align-middle">
+                        <div class="d-flex align-items-start gap-2">
+                            <div class="position-relative item-img-wrapper d-print-inline-block">
+                                <img src="" class="preview-img d-none" style="width: 45px; height: 45px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 45px; height: 45px; cursor: pointer; border-style: dashed; font-size: 0.75rem;" title="Add Image">
+                                    <i class="fas fa-camera text-muted"></i>
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                </label>
+                            </div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 45px;">${q.item.replace(/"/g, '&quot;')}</div>
+                        </div>
+                    </td>
+                    <td class="text-center py-2 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                    <td class="text-center py-2 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-2 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
@@ -1377,11 +1398,16 @@ if ($resReserved) {
 
     function executePrint() {
         const printArea = document.getElementById('printArea');
+        
+        // Save the manual changes made to any remaining <input> tags (like Qty and Price) before printing
         const inputs = printArea.querySelectorAll('input');
         inputs.forEach(input => {
-            input.setAttribute('value', input.value);
+            if(input.type !== 'file') {
+                input.setAttribute('value', input.value);
+            }
         });
 
+        // Contenteditable fields magically save themselves directly into the HTML! 
         const content = printArea.outerHTML;
         document.getElementById('printContainer').innerHTML = content;
         window.print();
