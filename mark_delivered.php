@@ -1,5 +1,4 @@
 <?php
-// mark_delivered.php
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -9,9 +8,9 @@ $input = json_decode(file_get_contents('php://input'), true);
 
 $deliveries = [];
 if (isset($input['deliveries']) && is_array($input['deliveries'])) {
-    $deliveries = $input['deliveries']; // Array from bulk operation
+    $deliveries = $input['deliveries']; 
 } elseif (isset($input['id'])) {
-    $deliveries = [ ['id' => $input['id'], 'qty' => $input['qty'] ?? null] ]; // Fallback for single item delivery calls
+    $deliveries = [ ['id' => $input['id'], 'qty' => $input['qty'] ?? null] ];
 }
 
 if (empty($deliveries)) {
@@ -21,7 +20,7 @@ if (empty($deliveries)) {
 
 $conn = getDBConnection();
 $today = date('Y-m-d');
-$completedGroups = []; // Keeping track of entirely completed POs to return a notification
+$completedGroups = []; 
 
 // --- START TRANSACTION ---
 $conn->begin_transaction();
@@ -40,9 +39,7 @@ try {
         $origQty = intval($item['quantity_requested']);
         $qtyToDeliver = intval($del['qty'] ?? $origQty);
         
-        if ($qtyToDeliver < 1 || $qtyToDeliver > $origQty) {
-            continue; // Skip invalid amounts
-        }
+        if ($qtyToDeliver < 1 || $qtyToDeliver > $origQty) continue;
 
         $po = $item['po_number'];
         $company = $item['company'];
@@ -79,7 +76,6 @@ try {
             $upd->bind_param("iddddsi", $qtyToDeliver, $del_actual, $del_nam, $del_income, $del_percent, $today, $id);
             $upd->execute();
             
-            // LOG ACTION
             logAction('Partial Delivery', "Delivered $qtyToDeliver out of $origQty items for $company (Item: {$item['item']})");
 
         } else {
@@ -87,12 +83,10 @@ try {
             $updateSelf->bind_param("si", $today, $id);
             $updateSelf->execute();
             
-            // LOG ACTION
             logAction('Full Delivery', "Delivered all $origQty items for $company (Item: {$item['item']})");
         }
 
         // 3. CHECK GROUP STATUS FOR THE TIMER
-        // (Ensures Timer is initialized *only* when an entire PO finishes execution successfully without pending counts!)
         $pendingCount = 0;
         if (!empty($po)) {
             $check = $conn->prepare("SELECT COUNT(*) as pending FROM sales WHERE po_number = ? AND company = ? AND (date_delivered IS NULL OR date_delivered = '0000-00-00')");
@@ -101,11 +95,8 @@ try {
             $pendingCount = $check->get_result()->fetch_assoc()['pending'];
         }
 
-        // 4. START TIMER (Apply Due Date) ONLY IF the PO or specific unassociated item Group is Fully Complete
+        // 4. START TIMER
         if ($pendingCount == 0) {
-            
-            // Fix: Default to 30 days instead of 0 if payment term is blank. 
-            // Handles parsing of terms like "30 Days", "Net 30", or "COD"
             $days = 30; 
             if (!empty($termStr)) {
                 if (preg_match('/(\d+)/', $termStr, $matches)) {
@@ -122,7 +113,7 @@ try {
                 $updateGroup->bind_param("sss", $dueDate, $po, $company);
                 $updateGroup->execute();
                 
-                $completedGroups[] = $po; // Add to Notification Array 
+                $completedGroups[] = $po;
             } else {
                 $updateSingle = $conn->prepare("UPDATE sales SET due_date = ? WHERE id = ?");
                 $updateSingle->bind_param("si", $dueDate, $id);
@@ -133,7 +124,6 @@ try {
 
     $conn->commit();
     
-    // Formatting a helpful alert indicating exactly if PO's got closed and triggered timestamps correctly!
     $msg = "Deliveries updated successfully.";
     if (count($completedGroups) > 0) {
         $msg .= " PO(s) " . implode(', ', array_unique($completedGroups)) . " are fully delivered. The due date timers have started!";

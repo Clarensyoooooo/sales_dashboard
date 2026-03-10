@@ -194,8 +194,8 @@
                     <div class="d-flex flex-wrap gap-2 mb-3" style="font-size: 11px;">
                         <span class="badge rounded-pill text-white" style="background-color: #419CA1;">Ms. Anne</span>
                         <span class="badge rounded-pill text-dark" style="background-color: #AFD5F7;">Ms. Cherry</span>
-                        <span class="badge rounded-pill text-white" style="background-color: green;">Ms. Glenda</span>
-                        <span class="badge rounded-pill text-white" style="background-color: purple;">Ms. Ivy</span>
+                        <span class="badge rounded-pill text-white" style="background-color: #007725;">Ms. Glenda</span>
+                        <span class="badge rounded-pill text-white" style="background-color: #AA38A;">Ms. Ivy</span>
                         <span class="badge rounded-pill text-white" style="background-color: blue;">Ms. Ally</span>
                         <span class="badge rounded-pill text-white" style="background-color: #FC0FC0;">Ms. Hannah</span>
                         <span class="badge rounded-pill text-dark" style="background-color: #cbd5e1;">Unassigned</span>
@@ -278,9 +278,8 @@
     <script>
     // --- UTILS ---
     const formatMoney = (num) => '₱' + parseFloat(num).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    
     const formatLarge = (num) => {
-        if(num >= 1000000) return '₱' + (num/1000000).toFixed(2) + 'M';
-        if(num >= 1000) return '₱' + (num/1000).toFixed(0) + 'K';
         return formatMoney(num);
     };
 
@@ -556,7 +555,7 @@
                         beginAtZero: true, 
                         position: 'left',
                         grid: { borderDash: [4, 4], color: '#e2e8f0' },
-                        ticks: { callback: function(val) { return '₱' + (val/1000) + 'k'; }, color: '#64748b' },
+                        ticks: { callback: function(val) { return formatMoney(val); }, color: '#64748b' },
                         title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 11 }, color: '#475569' }
                     },
                     y1: {

@@ -43,6 +43,7 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
             );
             $stmt->execute();
         }
+        logAction('Created Quotation', "Created {$status} quotation for {$header['company']} (Ref: {$header['quote_ref']}) with " . count($items) . " items.");
         $conn->commit();
         echo json_encode(['success' => true]);
     } catch (Exception $e) {
@@ -76,7 +77,10 @@ if (isset($_POST['approve_id'])) {
                 
                 // Update Status
                 $conn->query("UPDATE quotations SET status = 'Approved' WHERE id = $q_id");
+
                 
+                // ADD THIS LOGGING LINE:
+                logAction('Approved Quotation', "Approved quote for {$q['company']} (Item: {$q['item']}) and deducted stock.");
                 $conn->commit();
                 $msg = "approved";
             } catch (Exception $e) {
@@ -107,6 +111,8 @@ if (isset($_POST['delete_id'])) {
                 $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
             }
             $conn->query("DELETE FROM quotations WHERE id = $d_id");
+            // ADD THIS LOGGING LINE:
+            logAction('Deleted Quotation Item', "Deleted quote item: {$q['item']} for {$q['company']}");
         }
     }
     header("Location: quotations.php?msg=deleted");
@@ -160,6 +166,9 @@ if (isset($_POST['convert_id'])) {
 
             // 3. Mark Quote as Converted
             $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
+
+            // ADD THIS LOGGING LINE:
+        logAction('Updated Quote Status', "Changed quote status of item ID $r_id to $new_status");
             
             // COMMIT IF ALL SUCCEEDED
             $conn->commit();
@@ -205,6 +214,8 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $stmt = $conn->prepare("UPDATE quotations SET quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
     $stmt->bind_param("idddi", $qty, $s_price, $n_price, $total, $id);
     $stmt->execute();
+    // ADD THIS LOGGING LINE:
+    logAction('Edited Quotation', "Updated quote ID $id details (New Qty: $qty).");
     header("Location: quotations.php?msg=edited");
     exit;
 }
@@ -1074,7 +1085,7 @@ if ($resReserved) {
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
-    // --- DYNAMIC PREVIEW RECALCULATION ---
+   // --- DYNAMIC PREVIEW RECALCULATION ---
     function recalcPreview() {
         let rows = document.querySelectorAll('#previewTbody tr');
         let rawTotal = 0;
@@ -1114,10 +1125,24 @@ if ($resReserved) {
             vatLabel = 'VAT (0%):';
         }
         
+        // Withholding Tax Logic
+        let applyWht = document.getElementById('prevWhtToggle') && document.getElementById('prevWhtToggle').checked;
+        let whtAmt = 0;
+        
+        if (applyWht) {
+            whtAmt = vatable * 0.01; // 1% of Vatable Sales
+            document.getElementById('whtRow').classList.remove('d-none');
+        } else {
+            document.getElementById('whtRow').classList.add('d-none');
+        }
+        
+        let netPayable = grandTotal - whtAmt;
+        
         document.getElementById('vatLabel').innerText = vatLabel;
         document.getElementById('prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2});
         document.getElementById('prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
-        document.getElementById('prevGrandTotal').innerText = '₱' + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('prevWhtAmt').innerText = '-₱' + whtAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2});
     }
 
     // --- IMAGE UPLOAD LOGIC FOR PRINT PREVIEW ---
@@ -1146,13 +1171,19 @@ if ($resReserved) {
         const html = `
             <div class="d-print-none alert alert-info py-2 d-flex justify-content-between align-items-center mb-4 border border-info shadow-sm">
                 <span class="small fw-bold text-dark"><i class="fas fa-magic me-1"></i> Live Editing: Click any text to type. Click the dashed box to add item images!</span>
-                <div class="d-flex align-items-center gap-2">
-                    <label class="small fw-bold mb-0 text-dark text-nowrap">VAT Mode:</label>
-                    <select id="prevVatType" class="form-select form-select-sm fw-bold border-info text-primary" style="width: 180px;" onchange="recalcPreview()">
-                        <option value="inclusive">VAT Inclusive (12%)</option>
-                        <option value="exclusive">VAT Exclusive (+12%)</option>
-                        <option value="exempt">VAT Exempt (0%)</option>
-                    </select>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="small fw-bold mb-0 text-dark text-nowrap">VAT Mode:</label>
+                        <select id="prevVatType" class="form-select form-select-sm fw-bold border-info text-primary" style="width: 180px;" onchange="recalcPreview()">
+                            <option value="inclusive">VAT Inclusive (12%)</option>
+                            <option value="exclusive">VAT Exclusive (+12%)</option>
+                            <option value="exempt">VAT Exempt (0%)</option>
+                        </select>
+                    </div>
+                    <div class="form-check mb-0 mt-1">
+                        <input class="form-check-input border-info" type="checkbox" id="prevWhtToggle" onchange="recalcPreview()">
+                        <label class="form-check-label small fw-bold text-dark" for="prevWhtToggle">Less 1% WHT</label>
+                    </div>
                 </div>
             </div>
 
@@ -1262,6 +1293,10 @@ if ($resReserved) {
                         <tr>
                             <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
                             <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                        </tr>
+                        <tr id="whtRow" class="d-none">
+                            <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td>
+                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0 text-danger" id="prevWhtAmt">-₱0.00</td>
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <td colspan="5" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>

@@ -5,7 +5,7 @@ requireLogin(); // Ensure they are authenticated
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $conn = getDBConnection();
     
-    // Collect all data exactly as you had it
+    // Collect all data
     $date = $_POST['date'];
     $sn = $_POST['sn']; // Serial Number or Reference
     $po_number = $_POST['po_number'];
@@ -34,14 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $contact_person_contact = $_POST['contact_person_contact'] ?? '';
 
     // --- CONCURRENCY CHECK: Prevent duplicate entries ---
-    // If two encoders try to enter the same PO Number and Item, block the second one.
     $check_dup = $conn->prepare("SELECT id FROM sales WHERE po_number = ? AND item = ?");
     $check_dup->bind_param("ss", $po_number, $item);
     $check_dup->execute();
     if ($check_dup->get_result()->num_rows > 0) {
         $check_dup->close();
         $conn->close();
-        // Redirect back with an error indicating this was already encoded
         header('Location: form.php?error=duplicate_entry');
         exit;
     }
@@ -73,7 +71,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // 2. Update Inventory
-        // This query is naturally atomic in InnoDB, making it safe for concurrent transactions
         $updateStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
         $updateStock->bind_param("is", $quantity_requested, $item);
         
@@ -82,10 +79,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         
         // --- COMMIT TRANSACTION ---
-        // If both the insert and update succeeded, save it permanently.
         $conn->commit();
-        // ADD THIS LINE
+        
+        // Logging the action
         logAction('Created Sale', "Added sale for $company (Item: $item, Qty: $quantity_requested)");
+        
         $stmt->close();
         $updateStock->close();
         $conn->close();
@@ -95,7 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (Exception $e) {
         // --- ROLLBACK TRANSACTION ---
-        // If anything fails, undo the whole process to prevent corrupted data
         $conn->rollback();
         error_log("Transaction failed: " . $e->getMessage());
         header('Location: form.php?error=system_error');
