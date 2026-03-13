@@ -58,6 +58,10 @@ if (($handle = fopen($tempFile, "w")) !== FALSE) {
     
     // Safely replace the old file with the new one
     if (rename($tempFile, $csvFile)) {
+        // --- ADDED LOGGING HERE ---
+        $logContext = $found ? 'Updated' : 'Added';
+        logAction("Updated Client Data", "$logContext TIN for $company ($tin)");
+        
         echo json_encode(['success' => true, 'message' => 'Client saved to CSV']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to save file permissions']);

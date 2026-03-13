@@ -167,9 +167,6 @@ if (isset($_POST['convert_id'])) {
             // 3. Mark Quote as Converted
             $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
 
-            // ADD THIS LOGGING LINE:
-        logAction('Updated Quote Status', "Changed quote status of item ID $r_id to $new_status");
-            
             // COMMIT IF ALL SUCCEEDED
             $conn->commit();
             
@@ -197,6 +194,7 @@ if (isset($_POST['toggle_reserve_id'])) {
     if ($q && ($q['status'] == 'Pending' || $q['status'] == 'Reserved')) {
         $new_status = ($q['status'] == 'Reserved') ? 'Pending' : 'Reserved';
         $conn->query("UPDATE quotations SET status = '$new_status' WHERE id = $r_id");
+        logAction('Updated Quote Status', "Changed quote status of item ID $r_id to $new_status");
     }
     header("Location: quotations.php?msg=reserved_toggled");
     exit;
@@ -760,6 +758,7 @@ if ($resReserved) {
     <div id="printContainer" class="d-none d-print-block"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     let productMap = new Map();
     let quoteQueue = []; 
@@ -1099,7 +1098,7 @@ if ($resReserved) {
                 let price = parseFloat(priceInput.value) || 0;
                 let rowTotal = qty * price;
                 
-                row.querySelector('.prev-total').innerText = rowTotal.toLocaleString('en-US', {minimumFractionDigits: 2});
+                row.querySelector('.prev-total').innerText = rowTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 rawTotal += rowTotal;
             }
         });
@@ -1139,10 +1138,10 @@ if ($resReserved) {
         let netPayable = grandTotal - whtAmt;
         
         document.getElementById('vatLabel').innerText = vatLabel;
-        document.getElementById('prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2});
-        document.getElementById('prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
-        document.getElementById('prevWhtAmt').innerText = '-₱' + whtAmt.toLocaleString('en-US', {minimumFractionDigits: 2});
-        document.getElementById('prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2});
+        document.getElementById('prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('prevWhtAmt').innerText = '-₱' + whtAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
     // --- IMAGE UPLOAD LOGIC FOR PRINT PREVIEW ---
@@ -1288,11 +1287,11 @@ if ($resReserved) {
                     <tfoot class="border-dark">
                         <tr>
                             <td colspan="5" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
-                            <td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                         <tr>
                             <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
-                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                         <tr id="whtRow" class="d-none">
                             <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td>
@@ -1300,7 +1299,7 @@ if ($resReserved) {
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                             <td colspan="5" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
-                            <td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                            <td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
                 </table>
@@ -1356,13 +1355,27 @@ if ($resReserved) {
                         
                         <div class="mt-4 pt-2">
                             <p class="mb-0">Sincerely,</p>
-                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-2" value="ALLYSON ASHLEY AGUILERA">
+                            <div class="position-relative item-img-wrapper d-print-inline-block mt-2 mb-1" style="width: 180px; height: 60px;">
+                                <img src="" class="preview-img d-none w-100 h-100" style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
+                                    <i class="fas fa-signature text-muted me-2"></i> Add E-Sign
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                </label>
+                            </div>
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0" value="ALLYSON ASHLEY AGUILERA">
                             <div class="small">Sales and Technical Officer</div>
                         </div>
 
                         <div class="mt-4 pt-2">
                             <p class="mb-0">Conforme:</p>
-                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0 mt-2" placeholder="[Client Signature / Name]">
+                            <div class="position-relative item-img-wrapper d-print-inline-block mt-2 mb-1" style="width: 180px; height: 60px;">
+                                <img src="" class="preview-img d-none w-100 h-100" style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
+                                    <i class="fas fa-signature text-muted me-2"></i> Add E-Sign
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                </label>
+                            </div>
+                            <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0" placeholder="[Client Signature / Name]">
                             <div class="small">Signature over printed name</div>
                         </div>
                     </div>
@@ -1401,19 +1414,19 @@ if ($resReserved) {
                     <td class="py-1 text-start align-middle">
                         <div class="d-flex align-items-start gap-2">
                             <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 35px; height: 35px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 35px; height: 35px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
+                                <img src="" class="preview-img d-none" style="width: 65px; height: 65px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 65px; height: 65px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
                                     <i class="fas fa-camera text-muted"></i>
                                     <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
                                 </label>
                             </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 35px;">${q.item.replace(/"/g, '&quot;')}</div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 65px;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
                         </div>
                     </td>
                     <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
                     <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.n_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${(parseFloat(q.n_price) || 0).toFixed(2)}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });
@@ -1440,19 +1453,19 @@ if ($resReserved) {
                     <td class="py-1 text-start align-middle">
                         <div class="d-flex align-items-start gap-2">
                             <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 35px; height: 35px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 35px; height: 35px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
+                                <img src="" class="preview-img d-none" style="width: 65px; height: 65px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 65px; height: 65px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
                                     <i class="fas fa-camera text-muted"></i>
                                     <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
                                 </label>
                             </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 35px;">${q.item.replace(/"/g, '&quot;')}</div>
+                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 65px;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
                         </div>
                     </td>
                     <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
                     <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${q.nam_unit_price}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></td>
+                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${(parseFloat(q.nam_unit_price) || 0).toFixed(2)}" oninput="recalcPreview()"></td>
+                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
                 </tr>
             `;
         });

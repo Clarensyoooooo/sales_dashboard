@@ -22,11 +22,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $id = intval($_POST['id']);
     $new_status = $conn->real_escape_string($_POST['status']);
     
+    // Fetch details FIRST so we know what to put in the log
+    $details = $conn->query("SELECT company, item FROM sales WHERE id = $id")->fetch_assoc();
+    
     // Automatically timestamp the payment
     $date_paid_sql = ($new_status === 'Paid') ? "NOW()" : "NULL";
     $sql = "UPDATE sales SET payment_status = '$new_status', date_paid = $date_paid_sql WHERE id = $id";
     
     if($conn->query($sql)) {
+        // --- LOG THE ACTION ---
+        if ($details) {
+            logAction('Updated Payment Status', "Changed payment status to $new_status for {$details['company']} (Item: {$details['item']})");
+        }
+        
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => $conn->error]);
@@ -430,6 +438,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>

@@ -1,6 +1,7 @@
 <?php
 header('Content-Type: application/json');
 require_once 'config.php';
+requireLogin(); // Ensure user is logged in so we know WHO is doing this
 
 $conn = getDBConnection();
 
@@ -27,13 +28,17 @@ if (!empty($id)) {
     // UPDATE with new columns
     $stmt = $conn->prepare("UPDATE products SET name=?, category_code=?, unit=?, supplier=?, supplier_price=?, nam_price=?, margin=?, current_stock=?, reorder_level=? WHERE id=?");
     $stmt->bind_param("ssssddssii", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder, $id);
+    $actionType = 'Updated Product';
 } else {
     // INSERT with new columns
     $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     $stmt->bind_param("ssssddssi", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder);
+    $actionType = 'Created Product';
 }
 
 if ($stmt->execute()) {
+    // --- THIS IS THE MAGIC LINE ---
+    logAction($actionType, "$actionType: $name (Stock: $stock, Price: ₱$n_price)");
     echo json_encode(['success' => true]);
 } else {
     echo json_encode(['success' => false, 'message' => $conn->error]);

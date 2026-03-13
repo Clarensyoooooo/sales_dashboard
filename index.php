@@ -195,7 +195,7 @@
                         <span class="badge rounded-pill text-white" style="background-color: #419CA1;">Ms. Anne</span>
                         <span class="badge rounded-pill text-dark" style="background-color: #AFD5F7;">Ms. Cherry</span>
                         <span class="badge rounded-pill text-white" style="background-color: #007725;">Ms. Glenda</span>
-                        <span class="badge rounded-pill text-white" style="background-color: #AA38A;">Ms. Ivy</span>
+                        <span class="badge rounded-pill text-white" style="background-color: #AA338A;">Ms. Ivy</span>
                         <span class="badge rounded-pill text-white" style="background-color: blue;">Ms. Ally</span>
                         <span class="badge rounded-pill text-white" style="background-color: #FC0FC0;">Ms. Hannah</span>
                         <span class="badge rounded-pill text-dark" style="background-color: #cbd5e1;">Unassigned</span>
@@ -442,10 +442,19 @@
 
             // --- DYNAMIC TARGET CALCULATION ---
             let targetRev = 2500000; // Base: 1 Month
-            if (period === 'today') targetRev = 2500000 / 30;
-            else if (period === 'week') targetRev = 2500000 / 4;
-            else if (period === 'quarter') targetRev = 2500000 * 3;
-            else if (period === 'year') targetRev = 2500000 * 12;
+            if (period === 'today') {
+                targetRev = 2500000 / 30; // Rough daily target
+            } else if (period === 'week') {
+                targetRev = 2500000 / 4; // Rough weekly target
+            } else if (period === 'quarter') {
+                // Incrementing target for the current quarter (1st, 2nd, or 3rd month of the Q)
+                const monthOfQuarter = (now.getMonth() % 3) + 1; 
+                targetRev = 2500000 * monthOfQuarter;
+            } else if (period === 'year') {
+                // Incrementing 2.5M per month for the Year-To-Date target (Jan=1, Feb=2, Mar=3, etc.)
+                const currentMonth = now.getMonth() + 1; 
+                targetRev = 2500000 * currentMonth;
+            }
             
             const targetPct = ((data.stats.total_sales / targetRev) * 100).toFixed(1);
             let targetColor = data.stats.total_sales >= targetRev ? 'text-success' : 'text-primary';
@@ -683,17 +692,21 @@
 
         const ctx = document.getElementById('companyChart').getContext('2d');
         
-        const employeeColors = {
-            'Ms. Anne': '#419CA1',
-            'Ms. Cherry': '#AFD5F7',
-            'Ms. Glenda': 'green',
-            'Ms. Ivy': 'purple',
-            'Ms. Ally': 'blue',
-            'Ms. Hannah': '#FC0FC0',
-            'Unassigned': '#cbd5e1'
+        const getEmpColor = (empName) => {
+            if (!empName) return '#cbd5e1';
+            const n = String(empName).toLowerCase();
+            
+            if (n.includes('anne')) return '#419CA1';
+            if (n.includes('cherry')) return '#AFD5F7';
+            if (n.includes('glenda')) return '#007725';
+            if (n.includes('ivy')) return '#AA338A';
+            if (n.includes('ally')) return 'blue';
+            if (n.includes('hannah')) return '#FC0FC0';
+            
+            return '#cbd5e1'; // Unassigned fallback
         };
 
-        const backgroundColors = data.map(d => employeeColors[d.employee] || employeeColors['Unassigned']);
+        const backgroundColors = data.map(d => getEmpColor(d.employee));
         
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
         const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
@@ -702,7 +715,8 @@
         charts.company = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: data.map(d => d.company),
+                // CHANGED: Split the company name by space and only take the 1st word
+                labels: data.map(d => d.company.split(' ')[0]),
                 datasets: [
                     {
                         type: 'line', label: 'Max Target',
@@ -738,6 +752,10 @@
                     },
                     tooltip: {
                         callbacks: {
+                            // CHANGED: Show the FULL company name when hovering over the bar
+                            title: function(context) {
+                                return data[context[0].dataIndex].company;
+                            },
                             afterLabel: function(context) {
                                 return 'Account Manager: ' + data[context.dataIndex].employee;
                             }
@@ -756,8 +774,9 @@
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
                         const idx = elements[0].index;
-                        const label = charts.company.data.labels[idx];
-                        toggleDrill('company', label);
+                        // CHANGED: Pass the FULL company name to the drill-down filter
+                        const fullCompanyName = data[idx].company;
+                        toggleDrill('company', fullCompanyName);
                     }
                 },
                 onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }

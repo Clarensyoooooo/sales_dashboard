@@ -3,8 +3,8 @@
 require_once 'config.php';
 requireLogin();
 
-// Only Admins (Role 1) should access this
-if ($_SESSION['role_id'] != 1) {
+// Only Super Admins (Role 1) and Admins (Role 4) should access this
+if (!in_array($_SESSION['role_id'], [1, 4])) {
     header("Location: index.php");
     exit();
 }
@@ -33,17 +33,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $messageType = "success";
         $activeTab = 'manage';
         
+        // --- ADDED LOGGING HERE ---
+        logAction('Deleted Sales Data', "Deleted $deleted sales records for the month of $monthName $year.");
+        
     } elseif ($_POST['action'] == 'truncate_sales') {
         $conn->query("TRUNCATE TABLE sales");
         $message = "All sales data has been permanently cleared.";
         $messageType = "warning";
         $activeTab = 'manage';
         
+        // --- ADDED LOGGING HERE ---
+        logAction('Cleared Sales Data', "WARNING: Truncated ALL sales data in the system.");
+        
     } elseif ($_POST['action'] == 'truncate_products') {
         $conn->query("TRUNCATE TABLE products");
         $message = "All inventory products have been permanently cleared.";
         $messageType = "warning";
         $activeTab = 'manage';
+        
+        // --- ADDED LOGGING HERE ---
+        logAction('Cleared Inventory Data', "WARNING: Truncated ALL inventory products in the system.");
     }
 }
 
@@ -203,6 +212,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
             fclose($handle);
             $message = "Import Complete! Processed $imported records.";
             $messageType = "success";
+            
+            // --- ADDED BATCH LOGGING HERE ---
+            if ($imported > 0) {
+                if ($importType == 'sales') {
+                    logAction('Imported Sales Data', "Successfully bulk-imported $imported sales records via CSV.");
+                } elseif ($importType == 'prices') {
+                    logAction('Imported Inventory Data', "Successfully bulk-imported/updated $imported products via CSV.");
+                }
+            }
         } else {
             $message = "Could not open file.";
             $messageType = "danger";
@@ -350,6 +368,7 @@ if (isset($conn) && $conn instanceof mysqli) {
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
