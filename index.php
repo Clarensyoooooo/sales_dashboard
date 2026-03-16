@@ -210,10 +210,11 @@
             <div class="col-lg-4">
                 <div class="chart-card">
                     <div class="chart-title">
-                        <span><i class="fas fa-money-check-alt text-secondary me-2"></i>Collection Status (Paid vs Unpaid)</span>
+                        <span><i class="fas fa-users text-secondary me-2"></i>Account Managers</span>
+                        <small class="text-muted fw-normal" style="font-size: 11px;">Click to filter</small>
                     </div>
                     <div style="height: 300px; position:relative;">
-                        <canvas id="collectionChart"></canvas>
+                        <canvas id="managerChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -307,8 +308,22 @@
         ]
     };
 
+    const getEmpColor = (empName) => {
+        if (!empName) return '#cbd5e1';
+        const n = String(empName).toLowerCase();
+        
+        if (n.includes('anne')) return '#419CA1';
+        if (n.includes('cherry')) return '#AFD5F7';
+        if (n.includes('glenda')) return '#007725';
+        if (n.includes('ivy')) return '#AA338A';
+        if (n.includes('ally')) return 'blue';
+        if (n.includes('hannah')) return '#FC0FC0';
+        
+        return '#cbd5e1'; // Unassigned fallback
+    };
+
     // --- STATE ---
-    let activeDrills = { company: null, category: null };
+    let activeDrills = { company: null, category: null, manager: null };
     let currentTotalSales = 0;
     let charts = {}; 
 
@@ -337,7 +352,7 @@
     }
 
     function resetAllDrills() {
-        activeDrills = { company: null, category: null };
+        activeDrills = { company: null, category: null, manager: null };
         renderDrillTags();
         updateDashboard();
     }
@@ -355,6 +370,10 @@
         }
         if (activeDrills.category) {
             html += `<span class="drill-tag"><i class="fas fa-chart-pie"></i> ${activeDrills.category} <i class="fas fa-times ms-1" onclick="toggleDrill('category', '${activeDrills.category}')"></i></span>`;
+            hasActive = true;
+        }
+        if (activeDrills.manager) {
+            html += `<span class="drill-tag"><i class="fas fa-users"></i> ${activeDrills.manager} <i class="fas fa-times ms-1" onclick="toggleDrill('manager', '${activeDrills.manager}')"></i></span>`;
             hasActive = true;
         }
         
@@ -418,15 +437,24 @@
             if (val) { 
                 const [y, m] = val.split('-'); 
                 start = `${y}-${m}-01`; 
-                end = toLocalYYYYMMDD(new Date(y, m, 0)); 
+                
+                // --- DATE CAPPING FIX FOR CUSTOM MONTH ---
+                if (parseInt(y) === now.getFullYear() && parseInt(m) === now.getMonth() + 1) {
+                    end = today; 
+                } else {
+                    end = toLocalYYYYMMDD(new Date(y, m, 0)); 
+                }
             }
         } else {
             groupBy = 'year';
         }
 
-        let url = `api.php?start_date=${start}&end_date=${end}&group_by=${groupBy}`;
+        // Added period param so API knows exactly how to offset the "previous" dates
+        let url = `api.php?start_date=${start}&end_date=${end}&group_by=${groupBy}&period=${period}`;
+        
         if(activeDrills.company) url += `&company=${encodeURIComponent(activeDrills.company)}`;
         if(activeDrills.category) url += `&category=${encodeURIComponent(activeDrills.category)}`;
+        if(activeDrills.manager) url += `&manager=${encodeURIComponent(activeDrills.manager)}`;
 
         try {
             const res = await fetch(url);
@@ -447,11 +475,9 @@
             } else if (period === 'week') {
                 targetRev = 2500000 / 4; // Rough weekly target
             } else if (period === 'quarter') {
-                // Incrementing target for the current quarter (1st, 2nd, or 3rd month of the Q)
                 const monthOfQuarter = (now.getMonth() % 3) + 1; 
                 targetRev = 2500000 * monthOfQuarter;
             } else if (period === 'year') {
-                // Incrementing 2.5M per month for the Year-To-Date target (Jan=1, Feb=2, Mar=3, etc.)
                 const currentMonth = now.getMonth() + 1; 
                 targetRev = 2500000 * currentMonth;
             }
@@ -463,14 +489,27 @@
             
             document.getElementById('targetBadge').innerHTML = `<small class="${targetColor} fw-bold" style="font-size: 0.75rem;"><i class="fas ${targetIcon} me-1"></i>${targetPct}% of ${formattedTarget} Target</small>`;
 
-            // Growth Badge
-            const growth = data.stats.growth_sales || 0;
+            // --- GROWTH BADGE UPDATE WITH EXACT VALUE ---
+            const growthPct = data.stats.growth_sales || 0;
+            const growthVal = data.stats.growth_value || 0;
             const growthBadge = document.getElementById('growthBadge');
+            
             if (period === 'custom_month' || period === 'month' || period === 'year') {
-                const icon = growth >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
-                const color = growth >= 0 ? 'text-success' : 'text-danger';
-                growthBadge.innerHTML = `<small class="${color} fw-bold"><i class="fas ${icon}"></i> ${Math.abs(growth).toFixed(1)}% vs prev</small>`;
-            } else growthBadge.innerHTML = '';
+                const icon = growthPct >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                const color = growthPct >= 0 ? 'text-success' : 'text-danger';
+                const displaySign = growthVal >= 0 ? '+' : '';
+                
+                const formattedDiff = '₱' + Math.abs(growthVal).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                
+                growthBadge.innerHTML = `
+                    <small class="${color} fw-bold d-block" style="font-size: 0.85rem;">
+                        <i class="fas ${icon}"></i> ${Math.abs(growthPct).toFixed(1)}% <span class="text-muted" style="font-size: 0.75rem;">(${displaySign}${formattedDiff})</span>
+                    </small>
+                    <small class="text-muted fw-bold" style="font-size: 0.65rem; letter-spacing: 0.5px; text-transform: uppercase;">vs previous period</small>
+                `;
+            } else {
+                growthBadge.innerHTML = '';
+            }
 
             // Render Charts
             renderDailyChart(data.chart_data);
@@ -478,7 +517,7 @@
             renderDeliveryChart(data.delivery_stats);
             renderSupplierChart(data.supplier_costs);
             renderCompanyChart(data.company_sales);
-            renderCollectionChart(data.collection_status);
+            renderManagerChart(data.manager_sales);
             renderTopProducts(data.top_products);
             renderMatrix(data.category_matrix);
             
@@ -607,28 +646,33 @@
             }
         });
     }
-    
-    function renderCollectionChart(data) {
-        const ctx = document.getElementById('collectionChart').getContext('2d');
-        if (charts.collection) charts.collection.destroy();
 
-        const bgColors = data.map(d => d.status === 'Paid' ? colors.success : colors.warning);
+    // --- NEW INTERACTIVE PIE CHART WITH HOVER EFFECT ---
+    function renderManagerChart(data) {
+        const ctx = document.getElementById('managerChart').getContext('2d');
+        if (charts.manager) charts.manager.destroy();
 
-        charts.collection = new Chart(ctx, {
+        charts.manager = new Chart(ctx, {
             type: 'pie',
             data: {
-                labels: data.map(d => d.status),
+                labels: data.map(d => d.employee),
                 datasets: [{
-                    data: data.map(d => d.sales), 
-                    backgroundColor: bgColors,
+                    data: data.map(d => d.sales),
+                    backgroundColor: data.map(d => getEmpColor(d.employee)),
                     borderWidth: 2,
-                    borderColor: '#fff'
+                    borderColor: '#ffffff',
+                    hoverOffset: 12 // Makes the slice pop out when hovered!
                 }]
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
+                responsive: true, 
+                maintainAspectRatio: false,
                 plugins: { 
-                    legend: { position: 'bottom', labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true } },
+                    legend: { 
+                        display: true, 
+                        position: 'right', 
+                        labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true, padding: 20 } 
+                    },
                     tooltip: {
                         callbacks: {
                             label: function(context) {
@@ -636,7 +680,15 @@
                             }
                         }
                     }
-                }
+                },
+                onClick: (e, elements) => {
+                    if (elements.length > 0) {
+                        const idx = elements[0].index;
+                        const label = charts.manager.data.labels[idx];
+                        toggleDrill('manager', label);
+                    }
+                },
+                onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
             }
         });
     }
@@ -691,21 +743,6 @@
         container.style.height = '400px';
 
         const ctx = document.getElementById('companyChart').getContext('2d');
-        
-        const getEmpColor = (empName) => {
-            if (!empName) return '#cbd5e1';
-            const n = String(empName).toLowerCase();
-            
-            if (n.includes('anne')) return '#419CA1';
-            if (n.includes('cherry')) return '#AFD5F7';
-            if (n.includes('glenda')) return '#007725';
-            if (n.includes('ivy')) return '#AA338A';
-            if (n.includes('ally')) return 'blue';
-            if (n.includes('hannah')) return '#FC0FC0';
-            
-            return '#cbd5e1'; // Unassigned fallback
-        };
-
         const backgroundColors = data.map(d => getEmpColor(d.employee));
         
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
@@ -715,7 +752,6 @@
         charts.company = new Chart(ctx, {
             type: 'bar',
             data: {
-                // CHANGED: Split the company name by space and only take the 1st word
                 labels: data.map(d => d.company.split(' ')[0]),
                 datasets: [
                     {
@@ -752,7 +788,6 @@
                     },
                     tooltip: {
                         callbacks: {
-                            // CHANGED: Show the FULL company name when hovering over the bar
                             title: function(context) {
                                 return data[context[0].dataIndex].company;
                             },
@@ -774,7 +809,6 @@
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
                         const idx = elements[0].index;
-                        // CHANGED: Pass the FULL company name to the drill-down filter
                         const fullCompanyName = data[idx].company;
                         toggleDrill('company', fullCompanyName);
                     }

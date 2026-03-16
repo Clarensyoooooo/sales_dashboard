@@ -1,5 +1,5 @@
 <?php
-// api.php - Updated for Collection Status & Account Manager Tracking
+// api.php - Updated for Collection Status & Account Manager Tracking + Exact Growth Value
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -52,6 +52,15 @@ if (!empty($_GET['category'])) {
     $params[] = $_GET['category'];
     $types .= "s";
 }
+if (!empty($_GET['manager'])) {
+    if ($_GET['manager'] === 'Unassigned') {
+        $where_clauses[] = "company NOT IN (SELECT company_name FROM company_assignments)";
+    } else {
+        $where_clauses[] = "company IN (SELECT company_name FROM company_assignments WHERE employee_name = ?)";
+        $params[] = $_GET['manager'];
+        $types .= "s";
+    }
+}
 
 $where_sql = "WHERE " . implode(" AND ", $where_clauses);
 
@@ -69,7 +78,8 @@ $stats = [
     'total_orders' => intval($row['total_orders'] ?? 0),
     'avg_order_value' => 0,
     'profit_margin' => 0,
-    'growth_sales' => 0
+    'growth_sales' => 0,
+    'growth_value' => 0 // Exact difference
 ];
 
 if ($stats['total_orders'] > 0) $stats['avg_order_value'] = $stats['total_sales'] / $stats['total_orders'];
@@ -90,10 +100,21 @@ if (!empty($_GET['start_date']) && !empty($_GET['end_date'])) {
     
     if (!empty($_GET['company'])) { $prev_where[] = "company = ?"; $prev_params[] = $_GET['company']; $prev_types .= "s"; }
     if (!empty($_GET['category'])) { $prev_where[] = "category = ?"; $prev_params[] = $_GET['category']; $prev_types .= "s"; }
+    if (!empty($_GET['manager'])) { 
+        if ($_GET['manager'] === 'Unassigned') {
+            $prev_where[] = "company NOT IN (SELECT company_name FROM company_assignments)";
+        } else {
+            $prev_where[] = "company IN (SELECT company_name FROM company_assignments WHERE employee_name = ?)";
+            $prev_params[] = $_GET['manager'];
+            $prev_types .= "s";
+        }
+    }
     
     $prev_sql = "SELECT SUM(total_nam_amount) as old_sales FROM sales WHERE " . implode(" AND ", $prev_where);
     $prev_row = executeQuery($conn, $prev_sql, $prev_types, $prev_params)->fetch_assoc();
     $old_sales = floatval($prev_row['old_sales'] ?? 0);
+    
+    $stats['growth_value'] = $stats['total_sales'] - $old_sales; 
     
     if ($old_sales > 0) $stats['growth_sales'] = (($stats['total_sales'] - $old_sales) / $old_sales) * 100;
     else $stats['growth_sales'] = ($stats['total_sales'] > 0) ? 100 : 0;
@@ -164,6 +185,21 @@ while ($row = $result->fetch_assoc()) {
     ];
 }
 
+// --- Account Manager Sales Aggregation ---
+$manager_sales = [];
+foreach ($company_sales as $cs) {
+    $emp = $cs['employee'];
+    if (!isset($manager_sales[$emp])) $manager_sales[$emp] = 0;
+    $manager_sales[$emp] += $cs['total_sales'];
+}
+
+$manager_sales_arr = [];
+foreach ($manager_sales as $emp => $sales) {
+    $manager_sales_arr[] = ['employee' => $emp, 'sales' => $sales];
+}
+// Sort by highest sales
+usort($manager_sales_arr, function($a, $b) { return $b['sales'] <=> $a['sales']; });
+
 // --- 8. Category Matrix ---
 $category_breakdown = [];
 $sql = "SELECT category, SUM(quantity_requested) as total_qty, SUM(total_nam_amount) as total_sales, SUM(income) as total_profit FROM sales $where_sql AND category != '' GROUP BY category ORDER BY total_sales DESC";
@@ -220,6 +256,7 @@ echo json_encode([
     'top_products' => $top_products,
     'category_matrix' => array_values($category_breakdown),
     'collection_status' => $collection_status,
+    'manager_sales' => $manager_sales_arr,
     'companies' => $companies
 ]);
 

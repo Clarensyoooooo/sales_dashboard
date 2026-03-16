@@ -84,9 +84,13 @@ function logAction($action, $description = '') {
     $user_id = $_SESSION['user_id'];
     $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
     
-    $stmt = $conn->prepare("INSERT INTO system_logs (user_id, action, description, ip_address) VALUES (?, ?, ?, ?)");
+    // EXPLICITLY grab the PHP time (which is set to Asia/Manila at the top of config.php)
+    $created_at = date('Y-m-d H:i:s');
+    
+    // Inject the exact time into the database, overriding Hostinger's UTC default
+    $stmt = $conn->prepare("INSERT INTO system_logs (user_id, action, description, ip_address, created_at) VALUES (?, ?, ?, ?, ?)");
     if ($stmt) {
-        $stmt->bind_param("isss", $user_id, $action, $description, $ip_address);
+        $stmt->bind_param("issss", $user_id, $action, $description, $ip_address, $created_at);
         $stmt->execute();
         $stmt->close();
     }
