@@ -85,19 +85,24 @@ $stats = [
 if ($stats['total_orders'] > 0) $stats['avg_order_value'] = $stats['total_sales'] / $stats['total_orders'];
 if ($stats['total_sales'] > 0) $stats['profit_margin'] = ($stats['total_profit'] / $stats['total_sales']) * 100;
 
-// Growth Logic
-if (!empty($_GET['start_date']) && !empty($_GET['end_date'])) {
+// Growth Logic - Always compare against the FULL previous month
+if (!empty($_GET['start_date'])) {
     $start = new DateTime($_GET['start_date']);
-    $end = new DateTime($_GET['end_date']);
-    $diff = $start->diff($end)->days + 1;
     
-    $prev_end = $start->modify('-1 day')->format('Y-m-d');
-    $prev_start = $start->modify("-$diff days")->format('Y-m-d');
+    // Get the exact first and last day of the previous month
+    $prev_start_obj = clone $start;
+    $prev_start_obj->modify('first day of last month');
+    $prev_start = $prev_start_obj->format('Y-m-d');
+
+    $prev_end_obj = clone $start;
+    $prev_end_obj->modify('last day of last month');
+    $prev_end = $prev_end_obj->format('Y-m-d');
     
     $prev_where = ["date >= ?", "date <= ?"];
     $prev_params = [$prev_start, $prev_end];
     $prev_types = "ss";
     
+    // Apply the same drills/filters to the previous month's query
     if (!empty($_GET['company'])) { $prev_where[] = "company = ?"; $prev_params[] = $_GET['company']; $prev_types .= "s"; }
     if (!empty($_GET['category'])) { $prev_where[] = "category = ?"; $prev_params[] = $_GET['category']; $prev_types .= "s"; }
     if (!empty($_GET['manager'])) { 
