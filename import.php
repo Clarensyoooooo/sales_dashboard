@@ -33,7 +33,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $messageType = "success";
         $activeTab = 'manage';
         
-        // --- ADDED LOGGING HERE ---
         logAction('Deleted Sales Data', "Deleted $deleted sales records for the month of $monthName $year.");
         
     } elseif ($_POST['action'] == 'truncate_sales') {
@@ -42,7 +41,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $messageType = "warning";
         $activeTab = 'manage';
         
-        // --- ADDED LOGGING HERE ---
         logAction('Cleared Sales Data', "WARNING: Truncated ALL sales data in the system.");
         
     } elseif ($_POST['action'] == 'truncate_products') {
@@ -51,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
         $messageType = "warning";
         $activeTab = 'manage';
         
-        // --- ADDED LOGGING HERE ---
         logAction('Cleared Inventory Data', "WARNING: Truncated ALL inventory products in the system.");
     }
 }
@@ -78,53 +75,73 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
             
             // LOGIC 1: SALES IMPORT
             if ($importType == 'sales') {
+                
+                // --- DATE FIX: Helper function to force DD/MM/YYYY formatting ---
+                $parseDate = function($val) {
+                    $val = trim($val ?? '');
+                    if (empty($val) || $val == '-' || $val == 'N/A') return null;
+                    
+                    // Priority 1: DD/MM/YYYY (This is what your Excel outputs)
+                    $d = DateTime::createFromFormat('d/m/Y', $val);
+                    if ($d) return $d->format('Y-m-d');
+                    
+                    // Priority 2: Fallback to standard
+                    $time = strtotime(str_replace('/', '-', $val));
+                    return $time ? date('Y-m-d', $time) : null;
+                };
+
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
-                    if ($row <= 1 || empty($data[0])) continue; // Skip header
+                    // Skip header and empty rows (like those blank subtotal spacer rows)
+                    if ($row <= 1 || empty(trim($data[0]))) continue; 
 
                     $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
 
-                    $date = date('Y-m-d', strtotime($data[0]));
+                    // Parse exact dates using the helper
+                    $date = $parseDate($data[0]) ?? date('Y-m-d');
+                    
                     $sn = $data[1] ?? '';
                     $po_number = $data[2] ?? '';
                     $company = $data[3] ?? '';
                     $category = $data[4] ?? '';
                     $item = $data[5] ?? '';
                     $quantity = (int) str_replace(',', '', $data[6] ?? 0);
-                    $suppliers_price = $cleanPrice($data[7]);
-                    $total_actual    = $cleanPrice($data[8]);
-                    $nam_unit_price  = $cleanPrice($data[9]);
-                    $total_nam       = $cleanPrice($data[10]);
-                    $income          = $cleanPrice($data[12]);
+                    $suppliers_price = $cleanPrice($data[7] ?? 0);
+                    $total_actual    = $cleanPrice($data[8] ?? 0);
+                    $nam_unit_price  = $cleanPrice($data[9] ?? 0);
+                    $total_nam       = $cleanPrice($data[10] ?? 0);
+                    
+                    // index 11 is "TOTAL NAM AMOUNT SUB TOTAL" - We skip this!
+                    
+                    $income          = $cleanPrice($data[12] ?? 0);
                     $income_percent  = (float) str_replace('%', '', $data[13] ?? 0);
                     
-                    $date_delivered = !empty($data[15]) ? date('Y-m-d', strtotime($data[15])) : null;
-                    $payment_term = $data[16] ?? '';
-                    $due_date = !empty($data[17]) ? date('Y-m-d', strtotime($data[17])) : null;
-                    $si_number = $data[18] ?? '';
+                    // Parse delivery and due dates correctly
+                    $date_delivered = $parseDate($data[14]);
+                    $payment_term = $data[15] ?? '';
+                    $due_date = $parseDate($data[16]);
+                    
+                    $si_number = $data[17] ?? '';
+                    $buyer = $data[18] ?? ''; 
                     $remarks = $data[19] ?? '';
                     $supplier = $data[20] ?? '';
                     $address = $data[21] ?? '';
                     $tin = $data[22] ?? '';
-
-                    if (isset($data[24])) {
-                        $sales_invoice_no = $data[23];
-                        $contact_person   = $data[24];
-                    } else {
-                        $sales_invoice_no = '';
-                        $contact_person   = $data[23] ?? '';
-                    }
+                    $contact_person   = $data[23] ?? '';
+                    
+                    // Sales invoice is missing from this sheet format, so default empty
+                    $sales_invoice_no = '';
 
                     $sql = "INSERT INTO sales (
                         date, sn, po_number, company, category, item, quantity_requested,
                         suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount,
                         income, income_percent, date_delivered, payment_term, due_date,
-                        si_number, remarks, supplier, address, tin, sales_invoice_no, contact_person_contact
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        si_number, buyer, remarks, supplier, address, tin, sales_invoice_no, contact_person_contact
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     
                     $stmt = $conn->prepare($sql);
                     if ($stmt) {
-                        $stmt->bind_param("ssssssiddddddssssssssss", $date, $sn, $po_number, $company, $category, $item, $quantity, $suppliers_price, $total_actual, $nam_unit_price, $total_nam, $income, $income_percent, $date_delivered, $payment_term, $due_date, $si_number, $remarks, $supplier, $address, $tin, $sales_invoice_no, $contact_person);
+                        $stmt->bind_param("ssssssiddddddsssssssssss", $date, $sn, $po_number, $company, $category, $item, $quantity, $suppliers_price, $total_actual, $nam_unit_price, $total_nam, $income, $income_percent, $date_delivered, $payment_term, $due_date, $si_number, $buyer, $remarks, $supplier, $address, $tin, $sales_invoice_no, $contact_person);
                         
                         if ($stmt->execute()) {
                             $imported++;
@@ -139,10 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                 }
             }
             
-            // LOGIC 2: PRICES IMPORT (UPDATED FOR NEW CSV FORMAT)
+            // LOGIC 2: PRICES IMPORT
             elseif ($importType == 'prices') {
-                
-                // MAPPING: CSV Code -> Database/Form Category
                 $categoryMap = [
                     'CM' => 'CLEANING MATERIALS',
                     'CO' => 'CONSUMABLES',
@@ -157,19 +172,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
 
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
-                    // Skip the first 2 rows (Title and Headers) or if Product Name is empty
                     if ($row <= 2 || empty(trim($data[0]))) continue; 
 
                     $name = trim($data[0]);
-                    
-                    // NEW MAPPING: 0=Product, 1=Unit, 2=Cat, 3=Supplier, 4=Supp Price, 5=NAM Price, 6=Margin, 7=Inventory
                     $unit = trim($data[1] ?? '');
 
-                    // GRAB RAW CATEGORY AND MAP IT
                     $raw_category = trim($data[2] ?? 'General');
                     if (empty($raw_category)) $raw_category = 'General';
-                    
-                    // TRANSLATE ABBREVIATION TO FULL NAME
                     $category_code = isset($categoryMap[$raw_category]) ? $categoryMap[$raw_category] : $raw_category;
                     
                     $supplier = trim($data[3] ?? '');
@@ -213,7 +222,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
             $message = "Import Complete! Processed $imported records.";
             $messageType = "success";
             
-            // --- ADDED BATCH LOGGING HERE ---
             if ($imported > 0) {
                 if ($importType == 'sales') {
                     logAction('Imported Sales Data', "Successfully bulk-imported $imported sales records via CSV.");
@@ -228,7 +236,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
     }
 }
 
-// Check if $conn exists and is open before trying to close it
 if (isset($conn) && $conn instanceof mysqli) {
     $conn->close();
 }
@@ -368,7 +375,6 @@ if (isset($conn) && $conn instanceof mysqli) {
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

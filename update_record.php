@@ -30,7 +30,9 @@ $remarks = $_POST['remarks'] ?? '';
 $date_delivered = !empty($_POST['date_delivered']) ? $_POST['date_delivered'] : NULL;
 $payment_term = $_POST['payment_term'] ?? '';
 $due_date = !empty($_POST['due_date']) ? $_POST['due_date'] : NULL;
+
 $si_number = $_POST['si_number'] ?? '';
+$buyer = $_POST['buyer'] ?? ''; // <--- Added Buyer here
 $sales_invoice_no = $_POST['sales_invoice_no'] ?? '';
 $address = $_POST['address'] ?? '';
 $tin = $_POST['tin'] ?? '';
@@ -44,21 +46,22 @@ $income_percent = ($total_nam > 0) ? ($income / $total_nam) * 100 : 0;
 $sql = "UPDATE sales SET 
     date=?, sn=?, po_number=?, company=?, category=?, item=?, quantity_requested=?, suppliers_price=?, 
     total_actual_amount=?, nam_unit_price=?, total_nam_amount=?, income=?, income_percent=?, supplier=?, 
-    remarks=?, date_delivered=?, payment_term=?, due_date=?, si_number=?, sales_invoice_no=?, address=?, 
+    remarks=?, date_delivered=?, payment_term=?, due_date=?, si_number=?, buyer=?, sales_invoice_no=?, address=?, 
     tin=?, contact_person_contact=? WHERE id=?";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("ssssssidddddsssssssssssi", 
+// Fixed the binding format string to perfectly match the 25 parameters!
+$stmt->bind_param("ssssssiddddddssssssssssssi", 
     $date, $sn, $po_number, $company, $category, $item, $quantity, $supplier_price, $total_actual, 
     $nam_price, $total_nam, $income, $income_percent, $supplier, $remarks, $date_delivered, $payment_term, 
-    $due_date, $si_number, $sales_invoice_no, $address, $tin, $contact_person_contact, $id
+    $due_date, $si_number, $buyer, $sales_invoice_no, $address, $tin, $contact_person_contact, $id
 );
 
 if ($stmt->execute()) {
     logAction('Updated Sale', "Updated sale details for $company (Item: $item)");
     echo json_encode(['success' => true, 'message' => 'Record updated successfully']);
 } else {
-    echo json_encode(['success' => false, 'message' => 'Execute failed']);
+    echo json_encode(['success' => false, 'message' => 'Execute failed: ' . $stmt->error]);
 }
 
 $stmt->close();

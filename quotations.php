@@ -1273,8 +1273,9 @@ if ($resReserved) {
                 <table class="table table-bordered border-dark mb-3" style="font-size: 0.85rem;">
                     <thead class="text-center align-middle bg-light fw-bold" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
                         <tr>
-                            <th width="8%" class="py-1">S/N</th>
-                            <th width="40%" class="py-1">DESCRIPTION</th>
+                            <th width="5%" class="py-1">S/N</th>
+                            <th width="15%" class="py-1">IMAGE</th>
+                            <th width="28%" class="py-1">DESCRIPTION</th>
                             <th width="12%" class="py-1">UOM</th>
                             <th width="10%" class="py-1">QUANTITY</th>
                             <th width="15%" class="py-1">UNIT PRICE</th>
@@ -1286,19 +1287,19 @@ if ($resReserved) {
                     </tbody>
                     <tfoot class="border-dark">
                         <tr>
-                            <td colspan="5" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
+                            <td colspan="6" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
                             <td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                         <tr>
-                            <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
+                            <td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
                             <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                         <tr id="whtRow" class="d-none">
-                            <td colspan="5" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td>
+                            <td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td>
                             <td class="text-end py-0 pb-1 fw-bold border-bottom-0 text-danger" id="prevWhtAmt">-₱0.00</td>
                         </tr>
                         <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                            <td colspan="5" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
+                            <td colspan="6" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
                             <td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                         </tr>
                     </tfoot>
@@ -1411,17 +1412,17 @@ if ($resReserved) {
             tbodyHtml += `
                 <tr>
                     <td class="text-center py-1 align-middle">${sn}</td>
-                    <td class="py-1 text-start align-middle">
-                        <div class="d-flex align-items-start gap-2">
-                            <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 65px; height: 65px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 65px; height: 65px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
-                                    <i class="fas fa-camera text-muted"></i>
-                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
-                                </label>
-                            </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 65px;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
+                    <td class="text-center py-1 align-middle">
+                        <div class="position-relative item-img-wrapper d-inline-block mx-auto">
+                            <img src="" class="preview-img d-none" style="width: 100px; height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                            <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 100px; height: 100px; cursor: pointer; border-style: dashed; font-size: 0.85rem;" title="Add Image">
+                                <i class="fas fa-camera text-muted fa-lg"></i>
+                                <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                            </label>
                         </div>
+                    </td>
+                    <td class="py-1 text-start align-middle">
+                        <div contenteditable="true" class="print-input inline-edit w-100 p-0 m-0 fw-bold" style="outline: none; word-break: break-word;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
                     </td>
                     <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
                     <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
@@ -1450,17 +1451,17 @@ if ($resReserved) {
             tbody += `
                 <tr>
                     <td class="text-center py-1 align-middle">${sn}</td>
-                    <td class="py-1 text-start align-middle">
-                        <div class="d-flex align-items-start gap-2">
-                            <div class="position-relative item-img-wrapper d-print-inline-block">
-                                <img src="" class="preview-img d-none" style="width: 65px; height: 65px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 65px; height: 65px; cursor: pointer; border-style: dashed; font-size: 0.70rem;" title="Add Image">
-                                    <i class="fas fa-camera text-muted"></i>
-                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
-                                </label>
-                            </div>
-                            <div contenteditable="true" class="print-input inline-edit flex-grow-1 p-0 m-0 fw-bold" style="outline: none; word-break: break-word; min-height: 65px;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
+                    <td class="text-center py-1 align-middle">
+                        <div class="position-relative item-img-wrapper d-inline-block mx-auto">
+                            <img src="" class="preview-img d-none" style="width: 100px; height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                            <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 100px; height: 100px; cursor: pointer; border-style: dashed; font-size: 0.85rem;" title="Add Image">
+                                <i class="fas fa-camera text-muted fa-lg"></i>
+                                <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                            </label>
                         </div>
+                    </td>
+                    <td class="py-1 text-start align-middle">
+                        <div contenteditable="true" class="print-input inline-edit w-100 p-0 m-0 fw-bold" style="outline: none; word-break: break-word;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
                     </td>
                     <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
                     <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>

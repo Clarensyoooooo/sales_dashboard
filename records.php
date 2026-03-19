@@ -22,19 +22,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $id = intval($_POST['id']);
     $new_status = $conn->real_escape_string($_POST['status']);
     
-    // Fetch details FIRST so we know what to put in the log
     $details = $conn->query("SELECT company, item FROM sales WHERE id = $id")->fetch_assoc();
     
-    // Automatically timestamp the payment
     $date_paid_sql = ($new_status === 'Paid') ? "NOW()" : "NULL";
     $sql = "UPDATE sales SET payment_status = '$new_status', date_paid = $date_paid_sql WHERE id = $id";
     
     if($conn->query($sql)) {
-        // --- LOG THE ACTION ---
         if ($details) {
             logAction('Updated Payment Status', "Changed payment status to $new_status for {$details['company']} (Item: {$details['item']})");
         }
-        
         echo json_encode(['success' => true]);
     } else {
         echo json_encode(['success' => false, 'message' => $conn->error]);
@@ -68,12 +64,8 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
         .kpi-card.blue { border-color: #0d6efd; }
         .kpi-card.orange { border-color: #fd7e14; }
         .kpi-card.green { border-color: #198754; }
-        
-        /* Compact Table Styles */
         .table-sm td, .table-sm th { font-size: 0.85rem; vertical-align: middle; white-space: nowrap; }
         .col-truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        
-        /* Alert Row Colors for Finance Tracker */
         .row-overdue { background-color: #ffe6e6 !important; }
         .row-neardue { background-color: #fff4cc !important; }
         .row-paid { opacity: 0.7; background-color: #f1f8f5 !important; }
@@ -230,13 +222,13 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <th>Pay Term</th>
                                 <th>Due Tracker</th>
                                 <th>SI No.</th>
-                                <th>Inv No.</th>
+                                <th>Buyer</th> <th>Inv No.</th>
                                 <th>Remarks</th>
                                 <th class="text-center bg-light" style="position:sticky; right:0; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="recordsBody">
-                            <tr><td colspan="26" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
+                            <tr><td colspan="27" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -414,15 +406,20 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <label class="form-label small fw-bold">Due Date</label>
                                 <input type="date" id="editDueDate" class="form-control form-control-sm">
                             </div>
-                            <div class="col-md-3">
+                            
+                            <div class="col-md-2">
                                 <label class="form-label small fw-bold">SI Number</label>
                                 <input type="text" id="editSINumber" class="form-control form-control-sm">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Buyer</label>
+                                <input type="text" id="editBuyer" class="form-control form-control-sm">
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label small fw-bold">Invoice No</label>
                                 <input type="text" id="editSalesInvoiceNo" class="form-control form-control-sm">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label small fw-bold">Remarks</label>
                                 <textarea id="editRemarks" class="form-control form-control-sm" rows="1"></textarea>
                             </div>
@@ -438,7 +435,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
@@ -495,7 +491,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     }
                 });
 
-                // Safely apply options to dropdowns, if they exist
                 const compSelect = document.getElementById('filterCompany');
                 const catSelect = document.getElementById('filterCategory');
                 
@@ -524,7 +519,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
         }
 
         function applyFilters() {
-            // Safely fetch filter values using optional chaining
             const status = document.getElementById('filterStatus')?.value || '';
             const payStatus = document.getElementById('filterPayment')?.value || '';
             const company = document.getElementById('filterCompany')?.value || '';
@@ -543,20 +537,16 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 let isPartial = false;
                 if (!isDelivered && stat && stat.delivered > 0) isPartial = true;
 
-                // Delivery Filter
                 if (status === 'pending' && isDelivered) return false;
                 if (status === 'delivered' && !isDelivered) return false;
                 if (status === 'partial' && !isPartial) return false;
                 if (status === 'reserved' && !isReserved) return false;
-
-                // Payment Filter
                 if (payStatus && (r.payment_status || 'Pending') !== payStatus) return false;
-
                 if (company && r.company !== company) return false;
                 if (category && r.category !== category) return false;
                 
                 if (search) {
-                    const haystack = (r.item + r.po_number + r.remarks + r.sn).toLowerCase();
+                    const haystack = (r.item + r.po_number + r.remarks + r.sn + (r.buyer||'')).toLowerCase();
                     if (!haystack.includes(search)) return false;
                 }
 
@@ -578,7 +568,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
         }
 
         function clearFilters() {
-            // Safely reset elements
             ['filterStatus', 'filterPayment', 'filterCompany', 'filterCategory', 'searchItem', 'dateFrom', 'dateTo'].forEach(id => {
                 const el = document.getElementById(id);
                 if(el) el.value = '';
@@ -608,7 +597,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             const end = start + perPage;
             const pageData = filteredRecords.slice(start, end);
 
-            // Date setup for the Finance "Due Date Tracker"
             const today = new Date();
             today.setHours(0,0,0,0);
 
@@ -623,7 +611,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 let isPartial = false;
                 if (!isDelivered && stat && stat.delivered > 0) isPartial = true;
 
-                // --- 1. DELIVERY BADGE ---
                 let statusHtml = '';
                 if (isDelivered) {
                     statusHtml = `<span class="badge rounded-pill bg-success mb-1"><i class="fas fa-check me-1"></i>Delivered</span>`;
@@ -635,7 +622,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     statusHtml = `<span class="badge rounded-pill bg-warning text-dark mb-1"><i class="fas fa-clock me-1"></i>Pending</span>`;
                 }
 
-                // --- 2. FINANCE / PAYMENT BADGE (Color Magic) ---
                 let payStatus = r.payment_status || 'Pending';
                 let dueStr = r.due_date;
                 let dueBadge = '';
@@ -646,10 +632,8 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     if (payStatus === 'Paid') {
                         rowClass = 'row-paid';
                         dueBadge = `<span class="badge border border-success text-success"><i class="fas fa-check-circle me-1"></i>Paid</span>`;
-                        // The "Revert" button is added to the Actions column
                         payActionBtn = `<button class="btn btn-sm btn-outline-secondary" onclick="togglePayment(${r.id}, 'Pending')" title="Revert Payment"><i class="fas fa-undo"></i></button>`;
                     } else {
-                        // The "Mark Paid" button
                         payActionBtn = `<button class="btn btn-sm btn-success shadow-sm fw-bold" onclick="togglePayment(${r.id}, 'Paid')" title="Mark as Paid"><i class="fas fa-check-double"></i></button>`;
 
                         if (!dueStr || dueStr === '0000-00-00') {
@@ -705,7 +689,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                         ${dueBadge}
                     </td>
                     <td>${r.si_number || ''}</td>
-                    <td>${r.sales_invoice_no || ''}</td>
+                    <td class="fw-bold text-dark">${r.buyer || ''}</td> <td>${r.sales_invoice_no || ''}</td>
                     <td class="col-truncate" title="${r.remarks || ''}">${r.remarks || ''}</td>
                     
                     <td class="text-end bg-white" style="position:sticky; right:0;">
@@ -740,7 +724,6 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             updateSelectedCount();
         }
 
-        // --- NEW PAYMENT AJAX TOGGLE ---
         async function togglePayment(id, newStatus) {
             if (!confirm(`Are you sure you want to mark this item as ${newStatus}?`)) return;
             try {
@@ -753,7 +736,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 const data = await res.json();
                 
                 if(data.success) {
-                    window.location.reload(); // Quickest way to refresh the KPI cards up top!
+                    window.location.reload(); 
                 } else {
                     showAlert("Error updating payment status.", "danger");
                 }
@@ -864,6 +847,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             document.getElementById('editPaymentTerm').value = r.payment_term;
             document.getElementById('editDueDate').value = r.due_date;
             document.getElementById('editSINumber').value = r.si_number;
+            document.getElementById('editBuyer').value = r.buyer || ''; // Load Buyer Data
             document.getElementById('editSalesInvoiceNo').value = r.sales_invoice_no;
             document.getElementById('editRemarks').value = r.remarks;
 
@@ -895,6 +879,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 'quantity_requested': 'editQuantity', 'suppliers_price': 'editSupplierPrice',
                 'nam_unit_price': 'editNAMPrice', 'supplier': 'editSupplier', 'date_delivered': 'editDateDelivered',
                 'payment_term': 'editPaymentTerm', 'due_date': 'editDueDate', 'si_number': 'editSINumber',
+                'buyer': 'editBuyer', // Send Buyer Data
                 'sales_invoice_no': 'editSalesInvoiceNo', 'remarks': 'editRemarks'
             };
 
