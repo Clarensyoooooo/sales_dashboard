@@ -212,8 +212,40 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $stmt = $conn->prepare("UPDATE quotations SET quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
     $stmt->bind_param("idddi", $qty, $s_price, $n_price, $total, $id);
     $stmt->execute();
-    // ADD THIS LOGGING LINE:
     logAction('Edited Quotation', "Updated quote ID $id details (New Qty: $qty).");
+    header("Location: quotations.php?msg=edited");
+    exit;
+}
+
+// --- 6. DELETE ENTIRE QUOTE GROUP ---
+if (isset($_POST['delete_quote_ref'])) {
+    $d_ref = $_POST['delete_quote_ref'];
+    $conn = getDBConnection();
+    
+    // Restore stock for approved items in this quote before deleting
+    $res = $conn->query("SELECT item, quantity_requested, status FROM quotations WHERE quote_ref = '$d_ref' AND status = 'Approved'");
+    while($q = $res->fetch_assoc()) {
+        $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
+    }
+    
+    // Delete items (excluding Converted ones to keep sales history safe)
+    $conn->query("DELETE FROM quotations WHERE quote_ref = '$d_ref' AND status != 'Converted'");
+    logAction('Deleted Quotation Group', "Deleted entire quote group Ref: $d_ref");
+    
+    header("Location: quotations.php?msg=deleted");
+    exit;
+}
+
+// --- 7. EDIT QUOTE GROUP DETAILS ---
+if (isset($_POST['action']) && $_POST['action'] == 'edit_quote_group') {
+    $conn = getDBConnection();
+    $ref = $conn->real_escape_string($_POST['group_ref']);
+    $po = $conn->real_escape_string($_POST['group_po']);
+    $term = $conn->real_escape_string($_POST['group_term']);
+    $remarks = $conn->real_escape_string($_POST['group_remarks']);
+    
+    $conn->query("UPDATE quotations SET po_number='$po', payment_term='$term', remarks='$remarks' WHERE quote_ref='$ref'");
+    logAction('Edited Quotation Group', "Updated details for quote Ref: $ref");
     header("Location: quotations.php?msg=edited");
     exit;
 }
@@ -320,7 +352,7 @@ if ($resReserved) {
             table { page-break-inside: auto; width: 100% !important; border-collapse: collapse; }
             tr { page-break-inside: avoid; page-break-after: auto; }
             thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
+            tfoot { display: table-row-group; } /* CHANGED TO PREVENT REPEATING ON EVERY PAGE */
 
             /* Ensure grids stay intact and don't collapse */
             .row { display: flex !important; flex-wrap: nowrap !important; margin-left: 0 !important; margin-right: 0 !important; }
@@ -577,17 +609,31 @@ if ($resReserved) {
                                         <h6 class="text-primary fw-bold mb-0">
                                             <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
                                             
-                                            <button class="btn btn-sm btn-outline-info ms-3 shadow-sm fw-bold" 
-                                                    onclick='batchBuyAgain(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>)' 
-                                                    title="Duplicate Entire Quotation to Draft">
-                                                <i class="fas fa-redo-alt me-1"></i> Batch Buy Again
+                                            <button class="btn btn-sm btn-outline-success ms-3 shadow-sm fw-bold" 
+                                                    onclick='addItemsToExisting(<?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['po_number'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['payment_term'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['remarks'] ?? ''), ENT_QUOTES, "UTF-8") ?>)' 
+                                                    title="Add more items to this specific Quotation">
+                                                <i class="fas fa-plus me-1"></i> Add Item
                                             </button>
 
-                                            <button class="btn btn-sm btn-outline-dark ms-2 shadow-sm fw-bold" 
+                                            <button class="btn btn-sm btn-outline-primary ms-1 shadow-sm fw-bold" 
+                                                    onclick='editGroupDetails(<?= json_encode($ref) ?>, <?= json_encode($quotes[0]) ?>)' 
+                                                    title="Edit Group Info (PO, Terms, Remarks)">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+
+                                            <button class="btn btn-sm btn-outline-dark ms-1 shadow-sm fw-bold" 
                                                     onclick='printGroupedQuote(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>)' 
                                                     title="Print Formal Document">
                                                 <i class="fas fa-print me-1"></i> Print Formal Quote
                                             </button>
+
+                                            <form method="POST" onsubmit="return confirm('Are you sure you want to delete this ENTIRE quotation?');" class="d-inline">
+                                                <input type="hidden" name="delete_quote_ref" value="<?= $ref ?>">
+                                                <button class="btn btn-sm btn-outline-danger ms-1 shadow-sm fw-bold" title="Delete Entire Quotation">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                </button>
+                                            </form>
+
                                         </h6>
                                         <div class="text-end">
                                             <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
@@ -737,6 +783,40 @@ if ($resReserved) {
         </div>
     </div>
 
+    <div class="modal fade" id="editGroupModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>Edit Quotation Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <div class="modal-body bg-light">
+                        <input type="hidden" name="action" value="edit_quote_group">
+                        <input type="hidden" name="group_ref" id="edit_group_ref">
+                        
+                        <div class="mb-2">
+                            <label class="small text-muted fw-bold">Inquiry / PO Number</label>
+                            <input type="text" name="group_po" id="edit_group_po" class="form-control">
+                        </div>
+                        <div class="mb-2">
+                            <label class="small text-muted fw-bold">Payment Term</label>
+                            <input type="text" name="group_term" id="edit_group_term" class="form-control">
+                        </div>
+                        <div class="mb-2">
+                            <label class="small text-muted fw-bold">Remarks / Notes</label>
+                            <textarea name="group_remarks" id="edit_group_remarks" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-white">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary fw-bold">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="previewModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content border-0">
@@ -757,7 +837,6 @@ if ($resReserved) {
 
     <div id="printContainer" class="d-none d-print-block"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     let productMap = new Map();
@@ -1084,9 +1163,37 @@ if ($resReserved) {
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
-   // --- DYNAMIC PREVIEW RECALCULATION ---
+    // --- NEW: Open Group Edit Modal ---
+    window.editGroupDetails = function(ref, quoteData) {
+        document.getElementById('edit_group_ref').value = ref;
+        document.getElementById('edit_group_po').value = quoteData.po_number || '';
+        document.getElementById('edit_group_term').value = quoteData.payment_term || '';
+        document.getElementById('edit_group_remarks').value = quoteData.remarks || '';
+        new bootstrap.Modal(document.getElementById('editGroupModal')).show();
+    }
+
+    // --- NEW: Add Items directly to an existing quote group ---
+    window.addItemsToExisting = function(company, ref, po, term, remarks) {
+        document.getElementById('company').value = company;
+        document.getElementById('quote_ref').value = ref;
+        document.getElementById('po').value = po || '';
+        document.getElementById('term').value = term || '';
+        document.getElementById('remarks').value = remarks || '';
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('itemInput').focus();
+        document.getElementById('company').dispatchEvent(new Event('input'));
+        
+        alert(`Draft encoder initialized for Quote Ref: ${ref}. New items added to the draft will merge into this existing quotation upon saving.`);
+    }
+
+   // --- DYNAMIC PREVIEW RECALCULATION (FIXED GHOST CLONE BUG) ---
     function recalcPreview() {
-        let rows = document.querySelectorAll('#previewTbody tr');
+        // Only target the table inside the visible modal to prevent double-counting!
+        let modalContent = document.getElementById('receiptContent');
+        if (!modalContent) return;
+
+        let rows = modalContent.querySelectorAll('#previewTbody tr');
         let rawTotal = 0;
         
         rows.forEach(row => {
@@ -1096,56 +1203,52 @@ if ($resReserved) {
             if (qtyInput && priceInput) {
                 let qty = parseFloat(qtyInput.value) || 0;
                 let price = parseFloat(priceInput.value) || 0;
-                let rowTotal = qty * price;
+                let rowTotal = Math.round(qty * price * 100) / 100;
                 
                 row.querySelector('.prev-total').innerText = rowTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 rawTotal += rowTotal;
             }
         });
         
+        // Grab VAT Type (can use document.getElementById since there's only one dropdown)
         let vatType = document.getElementById('prevVatType').value;
-        let vatable = 0;
-        let vatAmt = 0;
-        let grandTotal = 0;
+        let vatable = 0, vatAmt = 0, grandTotal = rawTotal;
         let vatLabel = 'VAT (12%):';
         
         if (vatType === 'inclusive') {
-            vatable = rawTotal / 1.12;
-            vatAmt = rawTotal - vatable;
-            grandTotal = rawTotal;
+            vatable = Math.round((rawTotal / 1.12) * 100) / 100;
+            vatAmt = Math.round((rawTotal - vatable) * 100) / 100;
         } else if (vatType === 'exclusive') {
+            vatAmt = Math.round((rawTotal * 0.12) * 100) / 100;
             vatable = rawTotal;
-            vatAmt = rawTotal * 0.12;
             grandTotal = rawTotal + vatAmt;
         } else {
             vatable = rawTotal;
-            vatAmt = 0;
-            grandTotal = rawTotal;
             vatLabel = 'VAT (0%):';
         }
         
-        // Withholding Tax Logic
         let applyWht = document.getElementById('prevWhtToggle') && document.getElementById('prevWhtToggle').checked;
         let whtAmt = 0;
         
         if (applyWht) {
-            whtAmt = vatable * 0.01; // 1% of Vatable Sales
-            document.getElementById('whtRow').classList.remove('d-none');
+            whtAmt = Math.round((vatable * 0.01) * 100) / 100; 
+            modalContent.querySelector('#whtRow').classList.remove('d-none');
         } else {
-            document.getElementById('whtRow').classList.add('d-none');
+            modalContent.querySelector('#whtRow').classList.add('d-none');
         }
         
-        let netPayable = grandTotal - whtAmt;
+        let netPayable = Math.round((grandTotal - whtAmt) * 100) / 100;
         
-        document.getElementById('vatLabel').innerText = vatLabel;
-        document.getElementById('prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('prevWhtAmt').innerText = '-₱' + whtAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        document.getElementById('prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        // Safely apply calculations only to the visible modal
+        modalContent.querySelector('#vatLabel').innerText = vatLabel;
+        modalContent.querySelector('#prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        modalContent.querySelector('#prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        modalContent.querySelector('#prevWhtAmt').innerText = '-₱' + whtAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        modalContent.querySelector('#prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // --- IMAGE UPLOAD LOGIC FOR PRINT PREVIEW ---
-    window.loadPreviewImg = function(input) {
+    // --- CACHED IMAGE UPLOAD LOGIC ---
+    window.loadPreviewImg = function(input, storageKey) {
         if (input.files && input.files[0]) {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -1157,15 +1260,64 @@ if ($resReserved) {
                 img.classList.remove('d-none');
                 img.classList.add('d-print-block');
                 lbl.classList.add('d-none');
+
+                if (storageKey) {
+                    try { localStorage.setItem('cache_img_' + storageKey, e.target.result); } 
+                    catch(err) { console.log('Storage Full'); }
+                }
             }
             reader.readAsDataURL(input.files[0]);
         }
     }
 
-    // --- FORMAL DOCUMENT PRINT RENDERING ---
+    // --- HTML BUILDER HELPER FOR CONTINUOUS PREVIEWS ---
+    function buildItemRowHTML(q, index) {
+        let total = q.quantity * q.n_price;
+        let sn = String(index + 1).padStart(3, '0');
+        
+        // Create a safe, unique storage key per item
+        let itemNameSafe = q.item ? q.item.replace(/['"\W]+/g, '_') : 'unknown';
+        let cachedImg = localStorage.getItem('cache_img_' + itemNameSafe);
+        
+        let imgTag = cachedImg ? `src="${cachedImg}" class="preview-img d-print-block"` : `src="" class="preview-img d-none"`;
+        let lblDisplay = cachedImg ? `d-none` : `d-flex`;
+
+        return `
+            <tr>
+                <td class="text-center py-1 align-middle">${sn}</td>
+                <td class="text-center py-1 align-middle">
+                    <div class="position-relative item-img-wrapper d-inline-block mx-auto">
+                        <img ${imgTag} style="width: 100px; height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
+                        <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none ${lblDisplay} align-items-center justify-content-center upload-lbl shadow-sm" style="width: 100px; height: 100px; cursor: pointer; border-style: dashed; font-size: 0.85rem;" title="Add Image">
+                            <i class="fas fa-camera text-muted fa-lg"></i>
+                            <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this, '${itemNameSafe}')">
+                        </label>
+                    </div>
+                </td>
+                <td class="py-1 text-start align-middle">
+                    <div contenteditable="true" class="print-input inline-edit w-100 p-0 m-0 fw-bold" style="outline: none; word-break: break-word;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
+                </td>
+                <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
+                <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
+                <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${(parseFloat(q.n_price) || 0).toFixed(2)}" oninput="recalcPreview()"></td>
+                <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
+            </tr>
+        `;
+    }
+
+    // --- FORMAL DOCUMENT PRINT RENDERING (CACHED SIGNATURES) ---
     function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
         let vatable = grandTotal / 1.12;
         let vatAmt = grandTotal - vatable;
+
+        let cachedSig1 = localStorage.getItem('cache_img_sig_1') || '';
+        let cachedSig2 = localStorage.getItem('cache_img_sig_2') || '';
+        
+        let sig1Img = cachedSig1 ? `src="${cachedSig1}" class="preview-img d-print-block w-100 h-100"` : `src="" class="preview-img d-none w-100 h-100"`;
+        let sig1Lbl = cachedSig1 ? `d-none` : `d-flex`;
+
+        let sig2Img = cachedSig2 ? `src="${cachedSig2}" class="preview-img d-print-block w-100 h-100"` : `src="" class="preview-img d-none w-100 h-100"`;
+        let sig2Lbl = cachedSig2 ? `d-none` : `d-flex`;
 
         const html = `
             <div class="d-print-none alert alert-info py-2 d-flex justify-content-between align-items-center mb-4 border border-info shadow-sm">
@@ -1195,9 +1347,9 @@ if ($resReserved) {
                             <h3 class="fw-bolder mb-1" style="color: #003366; letter-spacing: 0.5px; font-size: 1.2rem;">NAM BUILDERS AND SUPPLY CORP.</h3>
                             <div style="font-size: 0.85rem; line-height: 1.3;">
                                 <span class="fw-bold">MAIN:</span> RNA BUILDING, BRGY SANTIAGO, MALVAR, BATANGAS, 4233<br>
-                                <span class="fw-bold text-primary">SATELLITE OFFICE:</span> <span contenteditable="true" class="print-input inline-edit text-primary fw-bold" style="outline: none; min-width: 250px; display:inline-block;" placeholder="[Type Satellite Office Address Here]"></span><br>
+                                <span class="fw-bold text-primary">SATELLITE OFFICE:</span> <span class="text-primary fw-bold">Yatco Subdivision, Barangay 4, Tanauan City, Batangas</span><br>
                                 <span class="fw-bold">CONTACT NO:</span> 0963-732-6844 / 0917-834-8811 / 0901-556-352<br>
-                                <span class="fw-bold d-inline-flex align-items-center">EMAIL: <span contenteditable="true" class="print-input inline-edit ms-1" style="min-width: 200px; outline: none;" placeholder="[Enter email address]"></span></span>
+                                <span class="fw-bold">EMAIL:</span> nam.nswt@myyahoo.com
                             </div>
                         </div>
                     </div>
@@ -1357,10 +1509,10 @@ if ($resReserved) {
                         <div class="mt-4 pt-2">
                             <p class="mb-0">Sincerely,</p>
                             <div class="position-relative item-img-wrapper d-print-inline-block mt-2 mb-1" style="width: 180px; height: 60px;">
-                                <img src="" class="preview-img d-none w-100 h-100" style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
+                                <img ${sig1Img} style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none ${sig1Lbl} align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
                                     <i class="fas fa-signature text-muted me-2"></i> Add E-Sign
-                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this, 'sig_1')">
                                 </label>
                             </div>
                             <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0" value="ALLYSON ASHLEY AGUILERA">
@@ -1370,10 +1522,10 @@ if ($resReserved) {
                         <div class="mt-4 pt-2">
                             <p class="mb-0">Conforme:</p>
                             <div class="position-relative item-img-wrapper d-print-inline-block mt-2 mb-1" style="width: 180px; height: 60px;">
-                                <img src="" class="preview-img d-none w-100 h-100" style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
-                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
+                                <img ${sig2Img} style="object-fit: contain; border-bottom: 1px solid #333; cursor: pointer;" onclick="this.parentElement.querySelector('input').click()" title="Click to change signature">
+                                <label class="btn btn-outline-secondary btn-sm p-0 m-0 w-100 h-100 d-print-none ${sig2Lbl} align-items-center justify-content-center upload-lbl shadow-sm" style="cursor: pointer; border-style: dashed;" title="Add Signature">
                                     <i class="fas fa-signature text-muted me-2"></i> Add E-Sign
-                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
+                                    <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this, 'sig_2')">
                                 </label>
                             </div>
                             <input type="text" class="print-input inline-edit w-100 fw-bold fs-6 mb-0" placeholder="[Client Signature / Name]">
@@ -1407,29 +1559,7 @@ if ($resReserved) {
         quoteQueue.forEach((q, index) => {
             let total = q.quantity * q.n_price;
             grandTotal += total;
-            let sn = String(index + 1).padStart(3, '0');
-            
-            tbodyHtml += `
-                <tr>
-                    <td class="text-center py-1 align-middle">${sn}</td>
-                    <td class="text-center py-1 align-middle">
-                        <div class="position-relative item-img-wrapper d-inline-block mx-auto">
-                            <img src="" class="preview-img d-none" style="width: 100px; height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                            <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 100px; height: 100px; cursor: pointer; border-style: dashed; font-size: 0.85rem;" title="Add Image">
-                                <i class="fas fa-camera text-muted fa-lg"></i>
-                                <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
-                            </label>
-                        </div>
-                    </td>
-                    <td class="py-1 text-start align-middle">
-                        <div contenteditable="true" class="print-input inline-edit w-100 p-0 m-0 fw-bold" style="outline: none; word-break: break-word;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
-                    </td>
-                    <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${(parseFloat(q.n_price) || 0).toFixed(2)}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
-                </tr>
-            `;
+            tbodyHtml += buildItemRowHTML(q, index);
         });
 
         renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks);
@@ -1444,40 +1574,19 @@ if ($resReserved) {
         let remarks = quotes[0].remarks || '';
 
         quotes.forEach((q, index) => {
-            let total = q.quantity_requested * q.nam_unit_price;
-            grandTotal += total;
-            let sn = String(index + 1).padStart(3, '0');
-            
-            tbody += `
-                <tr>
-                    <td class="text-center py-1 align-middle">${sn}</td>
-                    <td class="text-center py-1 align-middle">
-                        <div class="position-relative item-img-wrapper d-inline-block mx-auto">
-                            <img src="" class="preview-img d-none" style="width: 100px; height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #eee; border-radius: 4px;" onclick="this.parentElement.querySelector('input').click()" title="Click to change image">
-                            <label class="btn btn-outline-secondary btn-sm p-0 m-0 d-print-none d-flex align-items-center justify-content-center upload-lbl shadow-sm" style="width: 100px; height: 100px; cursor: pointer; border-style: dashed; font-size: 0.85rem;" title="Add Image">
-                                <i class="fas fa-camera text-muted fa-lg"></i>
-                                <input type="file" accept="image/*" class="d-none" onchange="loadPreviewImg(this)">
-                            </label>
-                        </div>
-                    </td>
-                    <td class="py-1 text-start align-middle">
-                        <div contenteditable="true" class="print-input inline-edit w-100 p-0 m-0 fw-bold" style="outline: none; word-break: break-word;">${q.item ? q.item.replace(/"/g, '&quot;') : ''}</div>
-                    </td>
-                    <td class="text-center py-1 align-middle"><input type="text" class="print-input inline-edit text-center w-100 p-0 m-0" placeholder="SET/PCS" value="SET"></td>
-                    <td class="text-center py-1 align-middle"><input type="number" class="print-input inline-edit text-center w-100 p-0 m-0 prev-qty" value="${q.quantity_requested}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 align-middle"><input type="number" step="0.01" class="print-input inline-edit text-end w-100 p-0 m-0 prev-price" value="${(parseFloat(q.nam_unit_price) || 0).toFixed(2)}" oninput="recalcPreview()"></td>
-                    <td class="text-end py-1 fw-bold align-middle"><span class="prev-total">${total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
-                </tr>
-            `;
+            let itemObj = { item: q.item, quantity: parseFloat(q.quantity_requested)||0, n_price: parseFloat(q.nam_unit_price)||0 };
+            grandTotal += itemObj.quantity * itemObj.n_price;
+            tbody += buildItemRowHTML(itemObj, index);
         });
 
         renderFormalPrint(date, ref, company, tbody, grandTotal, po, term, remarks);
     }
 
+    // --- PRINT EXECUTION (FIXED CLONE REMOVAL) ---
     function executePrint() {
         const printArea = document.getElementById('printArea');
         
-        // Save the manual changes made to any remaining <input> tags (like Qty and Price) before printing
+        // Save the manual changes made to any remaining <input> tags before printing
         const inputs = printArea.querySelectorAll('input');
         inputs.forEach(input => {
             if(input.type !== 'file') {
@@ -1485,10 +1594,14 @@ if ($resReserved) {
             }
         });
 
-        // Contenteditable fields magically save themselves directly into the HTML! 
         const content = printArea.outerHTML;
         document.getElementById('printContainer').innerHTML = content;
         window.print();
+        
+        // NEW: Destroy the hidden print clone after sending to printer to prevent calculation bugs!
+        setTimeout(() => {
+            document.getElementById('printContainer').innerHTML = '';
+        }, 1000);
     }
     
     function filterAccordions(input) {

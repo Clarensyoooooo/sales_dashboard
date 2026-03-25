@@ -70,66 +70,110 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
     } else {
         $handle = fopen($file['tmp_name'], "r");
         if ($handle !== FALSE) {
-            $row = 0;
             $imported = 0;
             
-            // LOGIC 1: SALES IMPORT
+            // LOGIC 1: SALES IMPORT (UPGRADED DYNAMIC PARSER)
             if ($importType == 'sales') {
                 
-                // --- DATE FIX: Helper function to force DD/MM/YYYY formatting ---
+                // --- DATE FIX: Smart Date Parser ---
                 $parseDate = function($val) {
                     $val = trim($val ?? '');
                     if (empty($val) || $val == '-' || $val == 'N/A') return null;
                     
-                    // Priority 1: DD/MM/YYYY (This is what your Excel outputs)
+                    // Format 1: MM/DD/YYYY or YYYY-MM-DD (natively supported by strtotime)
+                    $time = strtotime($val); 
+                    if ($time) return date('Y-m-d', $time);
+                    
+                    // Format 2: Fallback for DD/MM/YYYY
                     $d = DateTime::createFromFormat('d/m/Y', $val);
                     if ($d) return $d->format('Y-m-d');
                     
-                    // Priority 2: Fallback to standard
-                    $time = strtotime(str_replace('/', '-', $val));
-                    return $time ? date('Y-m-d', $time) : null;
+                    return null;
                 };
 
+                // --- MONEY FIX: Bulletproof Num Filter (Ignores Pesos and strange encodings) ---
+                $cleanPrice = function($val) { 
+                    return (float) preg_replace('/[^0-9\.-]/', '', $val ?? '0'); 
+                };
+
+                // Read header row first to dynamically map columns
+                $headers = fgetcsv($handle, 10000, ",");
+                
+                // Default fallback map just in case headers are completely missing
+                $idx = [
+                    'date' => 0, 'sn' => 1, 'po' => 2, 'company' => 3, 'category' => 4,
+                    'item' => 5, 'qty' => 6, 's_price' => 7, 't_actual' => 8, 'n_price' => 9,
+                    't_nam' => 10, 'income' => 12, 'income_pct' => 13, 'date_del' => 14,
+                    'term' => 15, 'due' => 16, 'si' => 17, 'buyer' => 18, 'remarks' => 19,
+                    'supplier' => 20, 'address' => 21, 'tin' => 22, 'contact' => 23
+                ];
+                
+                // Dynamically reassign indices based on header names
+                if ($headers) {
+                    foreach($headers as $i => $col) {
+                        $col = strtoupper(trim($col));
+                        if($col === 'DATE') $idx['date'] = $i;
+                        if(strpos($col, 'S/N') !== false) $idx['sn'] = $i;
+                        if(strpos($col, 'PO NUMBER') !== false) $idx['po'] = $i;
+                        if(strpos($col, 'COMPANY') !== false) $idx['company'] = $i;
+                        if(strpos($col, 'CATEGORY') !== false) $idx['category'] = $i;
+                        if($col === 'ITEM') $idx['item'] = $i;
+                        if(strpos($col, 'QUANTITY') !== false) $idx['qty'] = $i;
+                        if(strpos($col, 'SUPPLIER') !== false && strpos($col, 'PRICE') !== false) $idx['s_price'] = $i;
+                        if(strpos($col, 'ACTUAL AMOUNT') !== false) $idx['t_actual'] = $i;
+                        if(strpos($col, 'NAM UNIT PRICE') !== false) $idx['n_price'] = $i;
+                        if(strpos($col, 'TOTAL NAM AMOUNT') !== false && strpos($col, 'SUB') === false) $idx['t_nam'] = $i;
+                        if($col === 'INCOME') $idx['income'] = $i;
+                        if(strpos($col, 'PERCENT') !== false) $idx['income_pct'] = $i;
+                        if(strpos($col, 'DELIVERED') !== false) $idx['date_del'] = $i;
+                        if(strpos($col, 'TERM') !== false) $idx['term'] = $i;
+                        if(strpos($col, 'DUE') !== false) $idx['due'] = $i;
+                        if(strpos($col, 'SI NUMBER') !== false) $idx['si'] = $i;
+                        if($col === 'BUYER') $idx['buyer'] = $i;
+                        if(strpos($col, 'REMARKS') !== false) $idx['remarks'] = $i;
+                        if($col === 'SUPPLIER') $idx['supplier'] = $i;
+                        if(strpos($col, 'ADDRESS') !== false) $idx['address'] = $i;
+                        if(strpos($col, 'TIN') !== false) $idx['tin'] = $i;
+                        if(strpos($col, 'CONTACT PERSON') !== false) $idx['contact'] = $i;
+                    }
+                }
+
+                $row = 1; // Start at 1 because we consumed the header
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
-                    // Skip header and empty rows (like those blank subtotal spacer rows)
-                    if ($row <= 1 || empty(trim($data[0]))) continue; 
+                    // Skip empty rows (blank date check)
+                    if (empty(trim($data[$idx['date']] ?? ''))) continue; 
 
-                    $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
-
-                    // Parse exact dates using the helper
-                    $date = $parseDate($data[0]) ?? date('Y-m-d');
+                    // Extract data using our dynamic indices
+                    $date = $parseDate($data[$idx['date']]) ?? date('Y-m-d');
                     
-                    $sn = $data[1] ?? '';
-                    $po_number = $data[2] ?? '';
-                    $company = $data[3] ?? '';
-                    $category = $data[4] ?? '';
-                    $item = $data[5] ?? '';
-                    $quantity = (int) str_replace(',', '', $data[6] ?? 0);
-                    $suppliers_price = $cleanPrice($data[7] ?? 0);
-                    $total_actual    = $cleanPrice($data[8] ?? 0);
-                    $nam_unit_price  = $cleanPrice($data[9] ?? 0);
-                    $total_nam       = $cleanPrice($data[10] ?? 0);
+                    $sn = $data[$idx['sn']] ?? '';
+                    $po_number = $data[$idx['po']] ?? '';
+                    $company = $data[$idx['company']] ?? '';
+                    $category = $data[$idx['category']] ?? '';
+                    $item = $data[$idx['item']] ?? '';
+                    $quantity = (int) str_replace(',', '', $data[$idx['qty']] ?? 0);
                     
-                    // index 11 is "TOTAL NAM AMOUNT SUB TOTAL" - We skip this!
+                    $suppliers_price = $cleanPrice($data[$idx['s_price']] ?? 0);
+                    $total_actual    = $cleanPrice($data[$idx['t_actual']] ?? 0);
+                    $nam_unit_price  = $cleanPrice($data[$idx['n_price']] ?? 0);
+                    $total_nam       = $cleanPrice($data[$idx['t_nam']] ?? 0);
                     
-                    $income          = $cleanPrice($data[12] ?? 0);
-                    $income_percent  = (float) str_replace('%', '', $data[13] ?? 0);
+                    $income          = $cleanPrice($data[$idx['income']] ?? 0);
+                    $income_percent  = (float) preg_replace('/[^0-9\.-]/', '', $data[$idx['income_pct']] ?? 0);
                     
-                    // Parse delivery and due dates correctly
-                    $date_delivered = $parseDate($data[14]);
-                    $payment_term = $data[15] ?? '';
-                    $due_date = $parseDate($data[16]);
+                    $date_delivered = $parseDate($data[$idx['date_del']] ?? null);
+                    $payment_term = $data[$idx['term']] ?? '';
+                    $due_date = $parseDate($data[$idx['due']] ?? null);
                     
-                    $si_number = $data[17] ?? '';
-                    $buyer = $data[18] ?? ''; 
-                    $remarks = $data[19] ?? '';
-                    $supplier = $data[20] ?? '';
-                    $address = $data[21] ?? '';
-                    $tin = $data[22] ?? '';
-                    $contact_person   = $data[23] ?? '';
+                    $si_number = $data[$idx['si']] ?? '';
+                    $buyer = $data[$idx['buyer']] ?? ''; 
+                    $remarks = $data[$idx['remarks']] ?? '';
+                    $supplier = $data[$idx['supplier']] ?? '';
+                    $address = $data[$idx['address']] ?? '';
+                    $tin = $data[$idx['tin']] ?? '';
+                    $contact_person   = $data[$idx['contact']] ?? '';
                     
-                    // Sales invoice is missing from this sheet format, so default empty
                     $sales_invoice_no = '';
 
                     $sql = "INSERT INTO sales (
@@ -170,6 +214,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     'TE' => 'OFFICE TOOLS AND EQUIPMENT'
                 ];
 
+                $cleanPrice = function($val) { 
+                    return (float) preg_replace('/[^0-9\.-]/', '', $val ?? '0'); 
+                };
+
+                $row = 0;
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
                     if ($row <= 2 || empty(trim($data[0]))) continue; 
@@ -183,8 +232,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     
                     $supplier = trim($data[3] ?? '');
 
-                    $cleanPrice = function($val) { return (float) preg_replace('/[₱,\s]/u', '', $val ?? 0); };
-                    
                     $supplier_price = $cleanPrice($data[4] ?? 0);
                     $nam_price = $cleanPrice($data[5] ?? 0);
                     $margin = trim($data[6] ?? '');

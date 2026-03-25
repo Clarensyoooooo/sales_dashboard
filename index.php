@@ -647,49 +647,66 @@
         });
     }
 
-    // --- NEW INTERACTIVE PIE CHART WITH HOVER EFFECT ---
+   // --- UPDATED: Horizontal Bar Chart for Account Managers ---
     function renderManagerChart(data) {
         const ctx = document.getElementById('managerChart').getContext('2d');
         if (charts.manager) charts.manager.destroy();
 
         charts.manager = new Chart(ctx, {
-            type: 'pie',
+            type: 'bar',
             data: {
                 labels: data.map(d => d.employee),
                 datasets: [{
+                    label: 'Sales Revenue',
                     data: data.map(d => d.sales),
                     backgroundColor: data.map(d => getEmpColor(d.employee)),
-                    borderWidth: 2,
-                    borderColor: '#ffffff',
-                    hoverOffset: 12 // Makes the slice pop out when hovered!
+                    borderRadius: 4,
+                    barPercentage: 0.7
                 }]
             },
             options: {
+                indexAxis: 'y', // Turns it into a horizontal bar chart
                 responsive: true, 
                 maintainAspectRatio: false,
                 plugins: { 
-                    legend: { 
-                        display: true, 
-                        position: 'right', 
-                        labels: { boxWidth: 12, font: {size: 11}, usePointStyle: true, padding: 20 } 
-                    },
+                    legend: { display: false }, // Hide legend since names are on the left
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return ' ' + context.label + ': ' + formatLarge(context.raw);
+                                return ' ' + formatLarge(context.raw);
                             }
                         }
+                    },
+                    datalabels: {
+                        color: '#475569',
+                        anchor: 'end',
+                        align: 'end',
+                        offset: 4,
+                        formatter: (val) => formatLarge(val), // Prints exact amount
+                        font: { weight: 'bold', size: 11 }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: false, // Hide bottom numbers to keep it clean
+                        beginAtZero: true,
+                        grace: '35%' // Adds padding to the right so labels don't get cut off
+                    },
+                    y: {
+                        grid: { display: false },
+                        ticks: { font: { weight: 'bold', size: 11 }, color: '#334155' }
                     }
                 },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
                         const idx = elements[0].index;
                         const label = charts.manager.data.labels[idx];
-                        toggleDrill('manager', label);
+                        toggleDrill('manager', label); // Triggers the dashboard filter
                     }
                 },
                 onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
-            }
+            },
+            plugins: [ChartDataLabels] // Activates the exact values
         });
     }
 
