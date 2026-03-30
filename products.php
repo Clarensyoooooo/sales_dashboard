@@ -328,58 +328,63 @@
         }
 
         function renderTable() {
-            const tbody = document.getElementById('productTable');
-            tbody.innerHTML = '';
-            
-            if (filteredProducts.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>No products found.</td></tr>`;
-                document.getElementById('paginationBar').classList.add('d-none');
-                return;
-            }
-            document.getElementById('paginationBar').classList.remove('d-none');
+    const tbody = document.getElementById('productTable');
+    tbody.innerHTML = '';
+    
+    if (filteredProducts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>No products found.</td></tr>`;
+        document.getElementById('paginationBar').classList.add('d-none');
+        return;
+    }
+    document.getElementById('paginationBar').classList.remove('d-none');
 
-            const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-            const start = (currentPage - 1) * itemsPerPage;
-            const end = start + itemsPerPage;
-            const displayData = filteredProducts.slice(start, end);
+    const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+    const start = (currentPage - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    const displayData = filteredProducts.slice(start, end);
 
-            displayData.forEach(p => {
-                const tr = document.createElement('tr');
-                const stock = parseInt(p.current_stock || 0);
-                const reorder = parseInt(p.reorder_level || 10);
-                const isLow = stock <= reorder;
+    displayData.forEach(p => {
+        const tr = document.createElement('tr');
+        const stock = parseInt(p.current_stock || 0);
+        const reorder = parseInt(p.reorder_level || 10);
+        const isLow = stock <= reorder;
 
-                // Status Badge Logic
-                let stockBadge = isLow 
-                    ? `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>${stock}</span>` 
-                    : `<span class="badge bg-success">${stock}</span>`;
+        // Status Badge Logic
+        let stockBadge = isLow 
+            ? `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>${stock}</span>` 
+            : `<span class="badge bg-success">${stock}</span>`;
 
-                tr.innerHTML = `
-                    <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name}</td>
-                    <td class="text-muted small">${p.unit || '-'}</td>
-                    <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
-                    <td class="small">${p.supplier || '-'}</td>
-                    <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-                    <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
-                    <td class="text-center">${stockBadge}</td>
-                    <td class="text-end pe-3">
-                        <div class="btn-group btn-group-sm">
-                            <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id})" title="Delete">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
+        // --- NEW: Quote Draft Badge Logic ---
+        let draftBadge = (p.is_draft == 1 || p.is_draft == '1') 
+            ? `<span class="badge bg-warning text-dark ms-2 shadow-sm" title="Added from Quotation - Needs Review"><i class="fas fa-pencil-alt me-1"></i> QUOTE DRAFT</span>` 
+            : '';
 
-            document.getElementById('currentPage').textContent = currentPage;
-            document.getElementById('totalPages').textContent = totalPages;
-        }
+        tr.innerHTML = `
+            <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name} ${draftBadge}</td>
+            <td class="text-muted small">${p.unit || '-'}</td>
+            <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
+            <td class="small">${p.supplier || '-'}</td>
+            <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+            <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+            <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
+            <td class="text-center">${stockBadge}</td>
+            <td class="text-end pe-3">
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id})" title="Delete">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById('currentPage').textContent = currentPage;
+    document.getElementById('totalPages').textContent = totalPages;
+}
 
         function changePage(action) {
             const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);

@@ -5,15 +5,30 @@ requirePermission('manage_sales');
 
 $conn = getDBConnection();
 
-// --- 1. AUTO-HEAL DATABASE: Add Payment Columns ---
-$checkCol = $conn->query("SHOW COLUMNS FROM sales LIKE 'payment_status'");
-if($checkCol && $checkCol->num_rows == 0) {
-    $conn->query("ALTER TABLE sales ADD COLUMN payment_status VARCHAR(20) DEFAULT 'Pending' AFTER due_date");
-}
+// --- 1. AUTO-HEAL DATABASE: Sync missing columns from import.php ---
+// This safely checks and adds any new columns without touching existing data
+$required_columns = [
+    'payment_status' => "VARCHAR(20) DEFAULT 'Pending'",
+    'date_paid' => "DATETIME DEFAULT NULL",
+    'is_reserved' => "TINYINT(1) DEFAULT 0",
+    'sn' => "VARCHAR(100) DEFAULT NULL",
+    'po_number' => "VARCHAR(100) DEFAULT NULL",
+    'si_number' => "VARCHAR(100) DEFAULT NULL",
+    'buyer' => "VARCHAR(255) DEFAULT NULL",
+    'supplier' => "VARCHAR(255) DEFAULT NULL",
+    'address' => "TEXT DEFAULT NULL",
+    'tin' => "VARCHAR(100) DEFAULT NULL",
+    'sales_invoice_no' => "VARCHAR(100) DEFAULT NULL",
+    'contact_person_contact' => "VARCHAR(255) DEFAULT NULL",
+    'remarks' => "TEXT DEFAULT NULL"
+];
 
-$checkDatePaid = $conn->query("SHOW COLUMNS FROM sales LIKE 'date_paid'");
-if($checkDatePaid && $checkDatePaid->num_rows == 0) {
-    $conn->query("ALTER TABLE sales ADD COLUMN date_paid DATETIME DEFAULT NULL AFTER payment_status");
+foreach ($required_columns as $col => $definition) {
+    $check = $conn->query("SHOW COLUMNS FROM sales LIKE '$col'");
+    if ($check && $check->num_rows == 0) {
+        // Automatically add the missing column so the app doesn't break
+        $conn->query("ALTER TABLE sales ADD COLUMN $col $definition");
+    }
 }
 
 // --- 2. AJAX HANDLER FOR PAYMENT STATUS UPDATES ---
@@ -169,7 +184,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     <div class="col-md-4">
                         <label class="form-label small fw-bold text-muted">Search</label>
                         <div class="input-group input-group-sm">
-                            <input type="text" id="searchItem" class="form-control" placeholder="Item, PO, Remarks..." onkeyup="applyFilters()">
+                            <input type="text" id="searchItem" class="form-control" placeholder="Item, PO, Remarks, TIN..." onkeyup="applyFilters()">
                             <button class="btn btn-outline-secondary" onclick="clearFilters()" type="button" title="Reset"><i class="fas fa-undo"></i></button>
                         </div>
                     </div>
@@ -222,7 +237,8 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <th>Pay Term</th>
                                 <th>Due Tracker</th>
                                 <th>SI No.</th>
-                                <th>Buyer</th> <th>Inv No.</th>
+                                <th>Buyer</th> 
+                                <th>Inv No.</th>
                                 <th>Remarks</th>
                                 <th class="text-center bg-light" style="position:sticky; right:0; box-shadow: -2px 0 5px rgba(0,0,0,0.05);">Actions</th>
                             </tr>
@@ -546,7 +562,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 if (category && r.category !== category) return false;
                 
                 if (search) {
-                    const haystack = (r.item + r.po_number + r.remarks + r.sn + (r.buyer||'')).toLowerCase();
+                    const haystack = (r.item + r.po_number + r.remarks + r.tin + r.sn + (r.buyer||'')).toLowerCase();
                     if (!haystack.includes(search)) return false;
                 }
 
@@ -847,7 +863,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             document.getElementById('editPaymentTerm').value = r.payment_term;
             document.getElementById('editDueDate').value = r.due_date;
             document.getElementById('editSINumber').value = r.si_number;
-            document.getElementById('editBuyer').value = r.buyer || ''; // Load Buyer Data
+            document.getElementById('editBuyer').value = r.buyer || ''; 
             document.getElementById('editSalesInvoiceNo').value = r.sales_invoice_no;
             document.getElementById('editRemarks').value = r.remarks;
 

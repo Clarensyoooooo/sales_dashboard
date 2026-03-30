@@ -2,10 +2,17 @@
 require_once 'config.php'; 
 requireLogin(); 
 
+$conn = getDBConnection();
+
+// --- AUTO-HEAL DATABASE: Add draft column to products ---
+$checkDraft = $conn->query("SHOW COLUMNS FROM products LIKE 'is_draft'");
+if($checkDraft && $checkDraft->num_rows == 0) {
+    $conn->query("ALTER TABLE products ADD COLUMN is_draft TINYINT(1) DEFAULT 0");
+}
+
 // --- AUTO-GENERATE NEXT REFERENCE NUMBER (YYYY-XXX) ---
 function getNextQuoteRef($conn) {
     $yr = date('Y');
-    // Find the last reference starting with current year
     $res = $conn->query("SELECT quote_ref FROM quotations WHERE quote_ref LIKE '$yr-%' ORDER BY id DESC LIMIT 1");
     $last = $res->fetch_assoc();
     $num = 1;
@@ -21,19 +28,23 @@ function getNextQuoteRef($conn) {
 // --- 0. BATCH QUOTE CREATION (JSON API ENDPOINT) ---
 $input = json_decode(file_get_contents('php://input'), true);
 if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch') {
-    $conn = getDBConnection();
     $conn->begin_transaction();
     try {
-        // Allows form.php to send "Reserved" status
         $status = isset($input['status']) ? $input['status'] : 'Pending'; 
         $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         
+        // Prepare to check inventory
+        $checkProd = $conn->prepare("SELECT id FROM products WHERE name = ?");
+        $insertProd = $conn->prepare("INSERT INTO products (name, category_code, supplier_price, nam_price, margin, current_stock, is_draft) VALUES (?, ?, ?, ?, ?, 0, 1)");
+
         $header = $input['header'];
         $items = $input['items'];
         
         foreach($items as $item) {
             $total = $item['quantity'] * $item['n_price'];
             $cat = !empty($item['category']) ? $item['category'] : 'Uncategorized';
+            
+            // Insert into Quotations
             $stmt->bind_param("sssssidddssss", 
                 $header['date'], $header['quote_ref'], $header['company'], 
                 $cat, $item['item'], $item['quantity'], 
@@ -42,7 +53,19 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
                 $status
             );
             $stmt->execute();
+
+            // --- THE NEW LOGIC: Check if product exists, if not, save as Draft ---
+            $checkProd->bind_param("s", $item['item']);
+            $checkProd->execute();
+            if ($checkProd->get_result()->num_rows === 0) {
+                // Product doesn't exist, calculate margin and insert as Draft
+                $marginVal = ($item['n_price'] > 0) ? (($item['n_price'] - $item['s_price']) / $item['n_price']) * 100 : 0;
+                $marginStr = number_format($marginVal, 2) . '%';
+                $insertProd->bind_param("ssdds", $item['item'], $cat, $item['s_price'], $item['n_price'], $marginStr);
+                $insertProd->execute();
+            }
         }
+        
         logAction('Created Quotation', "Created {$status} quotation for {$header['company']} (Ref: {$header['quote_ref']}) with " . count($items) . " items.");
         $conn->commit();
         echo json_encode(['success' => true]);
@@ -50,8 +73,10 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
         $conn->rollback();
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
-    exit; // Stop execution after handling the JSON POST
+    exit; 
 }
+
+// ... [The rest of your quotations.php starting at // --- 1. APPROVE QUOTE & DEDUCT STOCK --- stays exactly the same]
 
 // --- 1. APPROVE QUOTE & DEDUCT STOCK ---
 if (isset($_POST['approve_id'])) {
@@ -302,6 +327,13 @@ if ($resReserved) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
+
+        /* Custom Scrollbar for Accordion */
+#quotesAccordion::-webkit-scrollbar { width: 6px; }
+#quotesAccordion::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+#quotesAccordion::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
+#quotesAccordion::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
         .accordion-button:not(.collapsed) { background-color: #e0e7ff; color: #4338ca; font-weight: bold; }
         .total-display { font-size: 1.1rem; font-weight: bold; color: #0d6efd; background: #e9ecef; }
         
@@ -377,7 +409,7 @@ if ($resReserved) {
         <div class="row g-4">
             
             <div class="col-lg-4">
-                <div class="card shadow-sm border-0 h-100">
+    <div class="sticky-top" style="top: 80px; z-index: 10;"> <div class="card shadow-sm border-0 h-100">
                     <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-file-invoice me-2"></i>New Quotation Encoder</div>
                     <div class="card-body bg-light">
                         <form id="quoteForm" onsubmit="event.preventDefault(); addToQuote();">
@@ -418,6 +450,7 @@ if ($resReserved) {
                                     </div>
                                 </div>
                             </div>
+</div>
 
                             <div>
                                 <div class="form-section-header text-success border-success">2. Add Item</div>
@@ -561,7 +594,7 @@ if ($resReserved) {
                     <input type="text" class="form-control form-control-sm w-25 shadow-sm" placeholder="Search companies or items..." onkeyup="filterAccordions(this)">
                 </div>
 
-                <div class="accordion shadow-sm" id="quotesAccordion">
+                <div class="accordion shadow-sm border border-secondary-subtle" id="quotesAccordion" style="max-height: 75vh; overflow-y: auto; border-radius: 0.5rem;">
                     <?php
                     $conn = getDBConnection();
                     $grouped = [];

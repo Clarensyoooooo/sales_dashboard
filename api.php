@@ -1,5 +1,5 @@
 <?php
-// api.php - Updated for Collection Status & Account Manager Tracking + Exact Growth Value
+// api.php - Updated to fix Account Manager drill-down subquery issues
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -31,6 +31,7 @@ function executeQuery($conn, $sql, $types = "", $params = []) {
 $where_clauses = ["1=1"];
 $params = [];
 $types = "";
+$manager_companies = []; // Store this for the growth logic reuse
 
 if (!empty($_GET['start_date'])) {
     $where_clauses[] = "date >= ?";
@@ -56,9 +57,25 @@ if (!empty($_GET['manager'])) {
     if ($_GET['manager'] === 'Unassigned') {
         $where_clauses[] = "company NOT IN (SELECT company_name FROM company_assignments)";
     } else {
-        $where_clauses[] = "company IN (SELECT company_name FROM company_assignments WHERE employee_name = ?)";
-        $params[] = $_GET['manager'];
-        $types .= "s";
+        // Pre-fetch companies to avoid MySQL Collation mismatch in subqueries
+        $mgr = $_GET['manager'];
+        $mgr_res = $conn->query("SELECT company_name FROM company_assignments WHERE employee_name = '" . $conn->real_escape_string($mgr) . "'");
+        if ($mgr_res) {
+            while($r = $mgr_res->fetch_assoc()) {
+                $manager_companies[] = $r['company_name'];
+            }
+        }
+        
+        if (empty($manager_companies)) {
+            $where_clauses[] = "1=0"; // Manager has no companies yet, return empty
+        } else {
+            $placeholders = implode(',', array_fill(0, count($manager_companies), '?'));
+            $where_clauses[] = "company IN ($placeholders)";
+            foreach ($manager_companies as $mc) {
+                $params[] = $mc;
+                $types .= "s";
+            }
+        }
     }
 }
 
@@ -79,17 +96,16 @@ $stats = [
     'avg_order_value' => 0,
     'profit_margin' => 0,
     'growth_sales' => 0,
-    'growth_value' => 0 // Exact difference
+    'growth_value' => 0 
 ];
 
 if ($stats['total_orders'] > 0) $stats['avg_order_value'] = $stats['total_sales'] / $stats['total_orders'];
 if ($stats['total_sales'] > 0) $stats['profit_margin'] = ($stats['total_profit'] / $stats['total_sales']) * 100;
 
-// Growth Logic - Always compare against the FULL previous month
+// Growth Logic 
 if (!empty($_GET['start_date'])) {
     $start = new DateTime($_GET['start_date']);
     
-    // Get the exact first and last day of the previous month
     $prev_start_obj = clone $start;
     $prev_start_obj->modify('first day of last month');
     $prev_start = $prev_start_obj->format('Y-m-d');
@@ -102,16 +118,22 @@ if (!empty($_GET['start_date'])) {
     $prev_params = [$prev_start, $prev_end];
     $prev_types = "ss";
     
-    // Apply the same drills/filters to the previous month's query
     if (!empty($_GET['company'])) { $prev_where[] = "company = ?"; $prev_params[] = $_GET['company']; $prev_types .= "s"; }
     if (!empty($_GET['category'])) { $prev_where[] = "category = ?"; $prev_params[] = $_GET['category']; $prev_types .= "s"; }
     if (!empty($_GET['manager'])) { 
         if ($_GET['manager'] === 'Unassigned') {
             $prev_where[] = "company NOT IN (SELECT company_name FROM company_assignments)";
         } else {
-            $prev_where[] = "company IN (SELECT company_name FROM company_assignments WHERE employee_name = ?)";
-            $prev_params[] = $_GET['manager'];
-            $prev_types .= "s";
+            if (empty($manager_companies)) {
+                $prev_where[] = "1=0";
+            } else {
+                $placeholders = implode(',', array_fill(0, count($manager_companies), '?'));
+                $prev_where[] = "company IN ($placeholders)";
+                foreach ($manager_companies as $mc) {
+                    $prev_params[] = $mc;
+                    $prev_types .= "s";
+                }
+            }
         }
     }
     
@@ -177,7 +199,7 @@ while($row = $result->fetch_assoc()) {
     $supplier_costs[] = ['supplier' => $row['supplier'], 'cost' => floatval($row['total_cost'])];
 }
 
-// --- 7. Company Sales (WITH EMPLOYEE DATA MAPPED) ---
+// --- 7. Company Sales ---
 $company_sales = [];
 $sql = "SELECT company, SUM(total_nam_amount) as total_sales FROM sales $where_sql AND company != '' GROUP BY company ORDER BY total_sales DESC";
 $result = executeQuery($conn, $sql, $types, $params);
@@ -202,7 +224,6 @@ $manager_sales_arr = [];
 foreach ($manager_sales as $emp => $sales) {
     $manager_sales_arr[] = ['employee' => $emp, 'sales' => $sales];
 }
-// Sort by highest sales
 usort($manager_sales_arr, function($a, $b) { return $b['sales'] <=> $a['sales']; });
 
 // --- 8. Category Matrix ---
@@ -232,7 +253,7 @@ while ($row = $result->fetch_assoc()) {
     }
 }
 
-// --- 9. Collection Status (Actual Paid vs Unpaid based on payment_status) ---
+// --- 9. Collection Status ---
 $collection_status = [];
 $sql = "SELECT 
             CASE WHEN payment_status = 'Paid' THEN 'Paid' ELSE 'Unpaid' END as status, 
@@ -247,7 +268,6 @@ while($row = $result->fetch_assoc()) {
     ];
 }
 
-// --- 10. Dropdown Data ---
 $companies = [];
 $res = $conn->query("SELECT DISTINCT company FROM sales WHERE company != '' ORDER BY company");
 while($r = $res->fetch_assoc()) $companies[] = $r['company'];

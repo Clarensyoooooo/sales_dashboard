@@ -1,69 +1,89 @@
 <?php
-header('Content-Type: application/json');
 require_once 'config.php';
 requireLogin();
+requirePermission('manage_sales');
 
+header('Content-Type: application/json');
+
+// Ensure this is a POST request
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
+    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
     exit;
 }
 
 $conn = getDBConnection();
-$id = isset($_POST['id']) ? intval($_POST['id']) : 0;
 
-if ($id <= 0) {
-    echo json_encode(['success' => false, 'message' => 'Invalid record ID']);
-    exit;
+// Helper function to safely handle empty dates so MySQL doesn't crash
+function cleanDate($val) {
+    return empty(trim($val ?? '')) ? null : trim($val);
 }
 
-$date = $_POST['date'] ?? '';
-$sn = $_POST['sn'] ?? '';
-$po_number = $_POST['po_number'] ?? '';
-$company = $_POST['company'] ?? '';
-$category = $_POST['category'] ?? '';
-$item = $_POST['item'] ?? '';
-$quantity = floatval($_POST['quantity_requested'] ?? 0);
-$supplier_price = floatval($_POST['suppliers_price'] ?? 0);
-$nam_price = floatval($_POST['nam_unit_price'] ?? 0);
-$supplier = $_POST['supplier'] ?? '';
-$remarks = $_POST['remarks'] ?? '';
-$date_delivered = !empty($_POST['date_delivered']) ? $_POST['date_delivered'] : NULL;
-$payment_term = $_POST['payment_term'] ?? '';
-$due_date = !empty($_POST['due_date']) ? $_POST['due_date'] : NULL;
+// 1. Catch all basic text and date fields
+$id = intval($_POST['id']);
+$date = cleanDate($_POST['date']);
+$sn = trim($_POST['sn'] ?? '');
+$po_number = trim($_POST['po_number'] ?? '');
+$company = trim($_POST['company'] ?? '');
+$address = trim($_POST['address'] ?? '');
+$tin = trim($_POST['tin'] ?? '');
+$contact = trim($_POST['contact_person_contact'] ?? '');
+$category = trim($_POST['category'] ?? '');
+$item = trim($_POST['item'] ?? '');
+$qty = intval($_POST['quantity_requested'] ?? 0);
 
-$si_number = $_POST['si_number'] ?? '';
-$buyer = $_POST['buyer'] ?? ''; // <--- Added Buyer here
-$sales_invoice_no = $_POST['sales_invoice_no'] ?? '';
-$address = $_POST['address'] ?? '';
-$tin = $_POST['tin'] ?? '';
-$contact_person_contact = $_POST['contact_person_contact'] ?? '';
+// 2. Catch financial inputs
+$s_price = floatval($_POST['suppliers_price'] ?? 0);
+$n_price = floatval($_POST['nam_unit_price'] ?? 0);
 
-$total_actual = $quantity * $supplier_price;
-$total_nam = $quantity * $nam_price;
-$income = $total_nam - $total_actual;
-$income_percent = ($total_nam > 0) ? ($income / $total_nam) * 100 : 0;
+// 3. Auto-calculate totals on the server to prevent front-end tampering
+$t_actual = $qty * $s_price;
+$t_nam = $qty * $n_price;
+$income = $t_nam - $t_actual;
+$income_pct = ($t_nam > 0) ? ($income / $t_nam) * 100 : 0;
 
+// 4. Catch the newly added fields
+$supplier = trim($_POST['supplier'] ?? '');
+$date_delivered = cleanDate($_POST['date_delivered']);
+$payment_term = trim($_POST['payment_term'] ?? '');
+$due_date = cleanDate($_POST['due_date']);
+$si_number = trim($_POST['si_number'] ?? '');
+$buyer = trim($_POST['buyer'] ?? '');
+$sales_invoice_no = trim($_POST['sales_invoice_no'] ?? '');
+$remarks = trim($_POST['remarks'] ?? '');
+
+// 5. Build the massive update query
 $sql = "UPDATE sales SET 
-    date=?, sn=?, po_number=?, company=?, category=?, item=?, quantity_requested=?, suppliers_price=?, 
-    total_actual_amount=?, nam_unit_price=?, total_nam_amount=?, income=?, income_percent=?, supplier=?, 
-    remarks=?, date_delivered=?, payment_term=?, due_date=?, si_number=?, buyer=?, sales_invoice_no=?, address=?, 
-    tin=?, contact_person_contact=? WHERE id=?";
+        date=?, sn=?, po_number=?, company=?, address=?, tin=?, contact_person_contact=?, 
+        category=?, item=?, quantity_requested=?, suppliers_price=?, total_actual_amount=?, 
+        nam_unit_price=?, total_nam_amount=?, income=?, income_percent=?, 
+        supplier=?, date_delivered=?, payment_term=?, due_date=?, 
+        si_number=?, buyer=?, sales_invoice_no=?, remarks=? 
+        WHERE id=?";
 
 $stmt = $conn->prepare($sql);
-// Fixed the binding format string to perfectly match the 25 parameters!
-$stmt->bind_param("ssssssiddddddssssssssssssi", 
-    $date, $sn, $po_number, $company, $category, $item, $quantity, $supplier_price, $total_actual, 
-    $nam_price, $total_nam, $income, $income_percent, $supplier, $remarks, $date_delivered, $payment_term, 
-    $due_date, $si_number, $buyer, $sales_invoice_no, $address, $tin, $contact_person_contact, $id
-);
 
-if ($stmt->execute()) {
-    logAction('Updated Sale', "Updated sale details for $company (Item: $item)");
-    echo json_encode(['success' => true, 'message' => 'Record updated successfully']);
+if ($stmt) {
+    // Bind all 25 parameters (s = string, i = integer, d = double/decimal)
+    $stmt->bind_param("sssssssssidddddsssssssssi", 
+        $date, $sn, $po_number, $company, $address, $tin, $contact, 
+        $category, $item, $qty, $s_price, $t_actual, 
+        $n_price, $t_nam, $income, $income_pct, 
+        $supplier, $date_delivered, $payment_term, $due_date, 
+        $si_number, $buyer, $sales_invoice_no, $remarks, 
+        $id
+    );
+
+    if ($stmt->execute()) {
+        // Log the edit for security/tracking
+        logAction('Updated Record', "Updated sales record ID $id ($item for $company)");
+        echo json_encode(['success' => true]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $stmt->error]);
+    }
+    $stmt->close();
 } else {
-    echo json_encode(['success' => false, 'message' => 'Execute failed: ' . $stmt->error]);
+    echo json_encode(['success' => false, 'message' => 'Query preparation failed: ' . $conn->error]);
 }
 
-$stmt->close();
 $conn->close();
 ?>

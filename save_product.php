@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json');
 require_once 'config.php';
-requireLogin(); // Ensure user is logged in so we know WHO is doing this
+requireLogin(); 
 
 $conn = getDBConnection();
 
@@ -12,7 +12,6 @@ $unit = $_POST['unit'];
 $supplier = $_POST['supplier'];
 $s_price = $_POST['supplier_price'];
 $n_price = $_POST['nam_price'];
-// New Fields
 $stock = $_POST['current_stock'] ?? 0;
 $reorder = $_POST['reorder_level'] ?? 10;
 
@@ -25,19 +24,18 @@ if ($n_price > 0) {
 }
 
 if (!empty($id)) {
-    // UPDATE with new columns
-    $stmt = $conn->prepare("UPDATE products SET name=?, category_code=?, unit=?, supplier=?, supplier_price=?, nam_price=?, margin=?, current_stock=?, reorder_level=? WHERE id=?");
+    // UPDATE: Notice is_draft=0 is hardcoded here. Saving an item formalizes it.
+    $stmt = $conn->prepare("UPDATE products SET name=?, category_code=?, unit=?, supplier=?, supplier_price=?, nam_price=?, margin=?, current_stock=?, reorder_level=?, is_draft=0 WHERE id=?");
     $stmt->bind_param("ssssddssii", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder, $id);
     $actionType = 'Updated Product';
 } else {
-    // INSERT with new columns
-    $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // INSERT new items manually (Not drafts)
+    $stmt = $conn->prepare("INSERT INTO products (name, category_code, unit, supplier, supplier_price, nam_price, margin, current_stock, reorder_level, is_draft) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
     $stmt->bind_param("ssssddssi", $name, $category, $unit, $supplier, $s_price, $n_price, $margin, $stock, $reorder);
     $actionType = 'Created Product';
 }
 
 if ($stmt->execute()) {
-    // --- THIS IS THE MAGIC LINE ---
     logAction($actionType, "$actionType: $name (Stock: $stock, Price: ₱$n_price)");
     echo json_encode(['success' => true]);
 } else {
