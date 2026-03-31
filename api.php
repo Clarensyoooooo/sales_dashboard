@@ -216,13 +216,23 @@ while ($row = $result->fetch_assoc()) {
 $manager_sales = [];
 foreach ($company_sales as $cs) {
     $emp = $cs['employee'];
-    if (!isset($manager_sales[$emp])) $manager_sales[$emp] = 0;
-    $manager_sales[$emp] += $cs['total_sales'];
+    if (!isset($manager_sales[$emp])) {
+        $manager_sales[$emp] = [
+            'sales' => 0,
+            'company_count' => 0
+        ];
+    }
+    $manager_sales[$emp]['sales'] += $cs['total_sales'];
+    $manager_sales[$emp]['company_count'] += 1; // Add +1 for each unique company
 }
 
 $manager_sales_arr = [];
-foreach ($manager_sales as $emp => $sales) {
-    $manager_sales_arr[] = ['employee' => $emp, 'sales' => $sales];
+foreach ($manager_sales as $emp => $data) {
+    $manager_sales_arr[] = [
+        'employee' => $emp, 
+        'sales' => $data['sales'],
+        'company_count' => $data['company_count']
+    ];
 }
 usort($manager_sales_arr, function($a, $b) { return $b['sales'] <=> $a['sales']; });
 

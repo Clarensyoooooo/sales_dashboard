@@ -665,15 +665,18 @@
                 }]
             },
             options: {
-                indexAxis: 'y', // Turns it into a horizontal bar chart
+                indexAxis: 'y', 
                 responsive: true, 
                 maintainAspectRatio: false,
                 plugins: { 
-                    legend: { display: false }, // Hide legend since names are on the left
+                    legend: { display: false }, 
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                return ' ' + formatLarge(context.raw);
+                                // Formats number and pulls the company count from the data
+                                const salesStr = Math.round(context.raw).toLocaleString('en-US');
+                                const compCount = data[context.dataIndex].company_count;
+                                return ` ${salesStr} (${compCount} Companies)`;
                             }
                         }
                     },
@@ -682,15 +685,15 @@
                         anchor: 'end',
                         align: 'end',
                         offset: 4,
-                        formatter: (val) => formatLarge(val), // Prints exact amount
+                        formatter: (val) => Math.round(val).toLocaleString('en-US'),
                         font: { weight: 'bold', size: 11 }
                     }
                 },
                 scales: {
                     x: {
-                        display: false, // Hide bottom numbers to keep it clean
+                        display: false, 
                         beginAtZero: true,
-                        grace: '35%' // Adds padding to the right so labels don't get cut off
+                        grace: '35%' 
                     },
                     y: {
                         grid: { display: false },
@@ -701,15 +704,14 @@
                     if (elements.length > 0) {
                         const idx = elements[0].index;
                         const label = charts.manager.data.labels[idx];
-                        toggleDrill('manager', label); // Triggers the dashboard filter
+                        toggleDrill('manager', label); 
                     }
                 },
                 onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
             },
-            plugins: [ChartDataLabels] // Activates the exact values
+            plugins: [ChartDataLabels] 
         });
     }
-
     function renderCategoryChart(data) {
         const ctx = document.getElementById('categoryChart').getContext('2d');
         if (charts.category) charts.category.destroy();

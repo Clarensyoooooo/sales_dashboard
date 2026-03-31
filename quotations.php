@@ -76,8 +76,6 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
     exit; 
 }
 
-// ... [The rest of your quotations.php starting at // --- 1. APPROVE QUOTE & DEDUCT STOCK --- stays exactly the same]
-
 // --- 1. APPROVE QUOTE & DEDUCT STOCK ---
 if (isset($_POST['approve_id'])) {
     $q_id = intval($_POST['approve_id']);
@@ -103,8 +101,6 @@ if (isset($_POST['approve_id'])) {
                 // Update Status
                 $conn->query("UPDATE quotations SET status = 'Approved' WHERE id = $q_id");
 
-                
-                // ADD THIS LOGGING LINE:
                 logAction('Approved Quotation', "Approved quote for {$q['company']} (Item: {$q['item']}) and deducted stock.");
                 $conn->commit();
                 $msg = "approved";
@@ -136,7 +132,6 @@ if (isset($_POST['delete_id'])) {
                 $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
             }
             $conn->query("DELETE FROM quotations WHERE id = $d_id");
-            // ADD THIS LOGGING LINE:
             logAction('Deleted Quotation Item', "Deleted quote item: {$q['item']} for {$q['company']}");
         }
     }
@@ -278,9 +273,34 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote_group') {
 $conn = getDBConnection();
 $next_ref_default = getNextQuoteRef($conn);
 
-// --- PRE-FILL COMPANY DATA ---
+// --- PRE-FILL COMPANY DATA WITH CSV ADDRESSES ---
 $clientData = [];
 
+// 1. Fetch Addresses from CSV
+$csvFiles = ['CLIENT-TIN - Sheet1.csv', 'database/CLIENT-TIN.csv'];
+$csvMatched = false;
+foreach ($csvFiles as $csvFile) {
+    if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
+        $header = fgetcsv($handle, 1000, ","); // Skip header row
+        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+            if (isset($data[0]) && trim($data[0]) !== '') {
+                $comp = trim($data[0]);
+                $addr = isset($data[1]) ? trim($data[1]) : '';
+                $clientData[$comp] = [
+                    'po' => '',
+                    'term' => '',
+                    'remarks' => '',
+                    'address' => $addr
+                ];
+            }
+        }
+        fclose($handle);
+        $csvMatched = true;
+        break; // Stop if we found and processed one of the CSV files
+    }
+}
+
+// 2. Merge existing data from Quotations table
 $resQuotes = $conn->query("SELECT company, po_number, payment_term, remarks FROM quotations WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
 if ($resQuotes) {
     while($row = $resQuotes->fetch_assoc()) {
@@ -289,12 +309,18 @@ if ($resQuotes) {
             $clientData[$comp] = [
                 'po' => trim($row['po_number'] ?? ''),
                 'term' => trim($row['payment_term'] ?? ''),
-                'remarks' => trim($row['remarks'] ?? '')
+                'remarks' => trim($row['remarks'] ?? ''),
+                'address' => ''
             ];
+        } else {
+            if (empty($clientData[$comp]['po'])) $clientData[$comp]['po'] = trim($row['po_number'] ?? '');
+            if (empty($clientData[$comp]['term'])) $clientData[$comp]['term'] = trim($row['payment_term'] ?? '');
+            if (empty($clientData[$comp]['remarks'])) $clientData[$comp]['remarks'] = trim($row['remarks'] ?? '');
         }
     }
 }
 
+// 3. Merge existing data from Sales table
 $resSales = $conn->query("SELECT company, payment_term FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
 if ($resSales) {
     while($row = $resSales->fetch_assoc()) {
@@ -303,8 +329,11 @@ if ($resSales) {
             $clientData[$comp] = [
                 'po' => '',
                 'term' => trim($row['payment_term'] ?? ''),
-                'remarks' => ''
+                'remarks' => '',
+                'address' => ''
             ];
+        } else {
+            if (empty($clientData[$comp]['term'])) $clientData[$comp]['term'] = trim($row['payment_term'] ?? '');
         }
     }
 }
@@ -435,6 +464,11 @@ if ($resReserved) {
                                                 <option value="<?= htmlspecialchars($comp); ?>">
                                             <?php endforeach; ?>
                                         </datalist>
+                                    </div>
+                                    
+                                    <div class="col-12">
+                                        <label class="small text-muted fw-bold">Company Address</label>
+                                        <input type="text" id="address" class="form-control form-control-sm" placeholder="Address (For Formal Print)">
                                     </div>
 
                                     <div class="col-6">
@@ -914,6 +948,9 @@ if ($resReserved) {
             if (!document.getElementById('remarks').value && client.remarks) {
                 document.getElementById('remarks').value = client.remarks;
             }
+            if (!document.getElementById('address').value && client.address) {
+                document.getElementById('address').value = client.address;
+            }
         }
     });
 
@@ -966,6 +1003,10 @@ if ($resReserved) {
             document.getElementById('po').value = row.po_number || '';
             document.getElementById('term').value = row.payment_term || '';
             document.getElementById('remarks').value = row.remarks || '';
+            
+            if (clientData.hasOwnProperty(row.company) && clientData[row.company].address) {
+                document.getElementById('address').value = clientData[row.company].address;
+            }
         }
 
         quoteQueue.push({
@@ -990,6 +1031,10 @@ if ($resReserved) {
             document.getElementById('po').value = first.po_number || '';
             document.getElementById('term').value = first.payment_term || '';
             document.getElementById('remarks').value = first.remarks || '';
+            
+            if (clientData.hasOwnProperty(first.company) && clientData[first.company].address) {
+                document.getElementById('address').value = clientData[first.company].address;
+            }
         }
 
         quotesArray.forEach(row => {
@@ -1213,6 +1258,13 @@ if ($resReserved) {
         document.getElementById('term').value = term || '';
         document.getElementById('remarks').value = remarks || '';
         
+        // Also prefill address if it exists in the data map
+        if (clientData.hasOwnProperty(company) && clientData[company].address) {
+            document.getElementById('address').value = clientData[company].address;
+        } else {
+            document.getElementById('address').value = '';
+        }
+        
         window.scrollTo({ top: 0, behavior: 'smooth' });
         document.getElementById('itemInput').focus();
         document.getElementById('company').dispatchEvent(new Event('input'));
@@ -1339,7 +1391,7 @@ if ($resReserved) {
     }
 
     // --- FORMAL DOCUMENT PRINT RENDERING (CACHED SIGNATURES) ---
-    function renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks) {
+    function renderFormalPrint(date, ref, client, address, tbodyHtml, grandTotal, po, term, remarks) {
         let vatable = grandTotal / 1.12;
         let vatAmt = grandTotal - vatable;
 
@@ -1404,7 +1456,7 @@ if ($resReserved) {
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-0 align-top">COMPANY ADDRESS:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]"></div></td>
+                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]">${address || ''}</div></td>
                                 </tr>
                                 <tr>
                                     <th class="p-0 pb-0 align-top">CONTACT PERSON:</th>
@@ -1582,6 +1634,7 @@ if ($resReserved) {
         const date = document.getElementById('date').value;
         const ref = document.getElementById('quote_ref').value;
         const client = document.getElementById('company').value;
+        const address = document.getElementById('address').value;
         const po = document.getElementById('po').value;
         const term = document.getElementById('term').value;
         const remarks = document.getElementById('remarks').value;
@@ -1595,7 +1648,7 @@ if ($resReserved) {
             tbodyHtml += buildItemRowHTML(q, index);
         });
 
-        renderFormalPrint(date, ref, client, tbodyHtml, grandTotal, po, term, remarks);
+        renderFormalPrint(date, ref, client, address, tbodyHtml, grandTotal, po, term, remarks);
     }
 
     function printGroupedQuote(quotes, company, ref) {
@@ -1605,6 +1658,11 @@ if ($resReserved) {
         let po = quotes[0].po_number || '';
         let term = quotes[0].payment_term || '';
         let remarks = quotes[0].remarks || '';
+        
+        let address = '';
+        if (clientData.hasOwnProperty(company) && clientData[company].address) {
+            address = clientData[company].address;
+        }
 
         quotes.forEach((q, index) => {
             let itemObj = { item: q.item, quantity: parseFloat(q.quantity_requested)||0, n_price: parseFloat(q.nam_unit_price)||0 };
@@ -1612,7 +1670,7 @@ if ($resReserved) {
             tbody += buildItemRowHTML(itemObj, index);
         });
 
-        renderFormalPrint(date, ref, company, tbody, grandTotal, po, term, remarks);
+        renderFormalPrint(date, ref, company, address, tbody, grandTotal, po, term, remarks);
     }
 
     // --- PRINT EXECUTION (FIXED CLONE REMOVAL) ---
