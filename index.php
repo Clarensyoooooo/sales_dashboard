@@ -673,8 +673,8 @@
                     tooltip: {
                         callbacks: {
                             label: function(context) {
-                                // Formats number and pulls the company count from the data
-                                const salesStr = Math.round(context.raw).toLocaleString('en-US');
+                                // Restored: formatLarge puts the peso sign and decimals back
+                                const salesStr = formatLarge(context.raw);
                                 const compCount = data[context.dataIndex].company_count;
                                 return ` ${salesStr} (${compCount} Companies)`;
                             }
@@ -685,7 +685,8 @@
                         anchor: 'end',
                         align: 'end',
                         offset: 4,
-                        formatter: (val) => Math.round(val).toLocaleString('en-US'),
+                        // Restored: formatLarge puts the peso sign and decimals back
+                        formatter: (val) => formatLarge(val),
                         font: { weight: 'bold', size: 11 }
                     }
                 },
@@ -712,6 +713,7 @@
             plugins: [ChartDataLabels] 
         });
     }
+    
     function renderCategoryChart(data) {
         const ctx = document.getElementById('categoryChart').getContext('2d');
         if (charts.category) charts.category.destroy();
@@ -808,22 +810,39 @@
                     tooltip: {
                         callbacks: {
                             title: function(context) {
-                                return data[context[0].dataIndex].company;
+                                if (context[0].datasetIndex === 2) {
+                                    return data[context[0].dataIndex].company;
+                                }
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                // NEW: Formats tooltip as a whole number without the peso sign
+                                return ' ' + context.dataset.label + ': ' + Math.round(context.raw).toLocaleString('en-US');
                             },
                             afterLabel: function(context) {
-                                return 'Account Manager: ' + data[context.dataIndex].employee;
+                                if (context.datasetIndex === 2) {
+                                    return 'Account Manager: ' + data[context.dataIndex].employee;
+                                }
+                                return '';
                             }
                         }
                     },
                     datalabels: {
                         color: '#444', anchor: 'end', align: 'end', offset: -5,
-                        formatter: (val) => formatLarge(val),
+                        // NEW: Formats datalabels above bars as whole numbers
+                        formatter: (val) => Math.round(val).toLocaleString('en-US'),
                         font: { weight: 'bold', size: 10 }
                     }
                 },
                 scales: {
                     x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } },
-                    y: { display: true, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, beginAtZero: true, ticks: { callback: function(value) { return formatLarge(value); } } }
+                    y: { 
+                        display: true, 
+                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, 
+                        beginAtZero: true, 
+                        // NEW: Formats the Y-axis numbers as whole numbers without peso sign
+                        ticks: { callback: function(value) { return Math.round(value).toLocaleString('en-US'); } } 
+                    }
                 },
                 onClick: (e, elements) => {
                     if (elements.length > 0) {
