@@ -80,18 +80,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $val = trim($val ?? '');
                     if (empty($val) || $val == '-' || $val == 'N/A') return null;
                     
-                    // Format 1: MM/DD/YYYY or YYYY-MM-DD (natively supported by strtotime)
                     $time = strtotime($val); 
                     if ($time) return date('Y-m-d', $time);
                     
-                    // Format 2: Fallback for DD/MM/YYYY
                     $d = DateTime::createFromFormat('d/m/Y', $val);
                     if ($d) return $d->format('Y-m-d');
                     
                     return null;
                 };
 
-                // --- MONEY FIX: Bulletproof Num Filter (Ignores Pesos and strange encodings) ---
+                // --- MONEY FIX: Bulletproof Num Filter ---
                 $cleanPrice = function($val) { 
                     return (float) preg_replace('/[^0-9\.-]/', '', $val ?? '0'); 
                 };
@@ -103,9 +101,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                 $idx = [
                     'date' => 0, 'sn' => 1, 'po' => 2, 'company' => 3, 'category' => 4,
                     'item' => 5, 'qty' => 6, 's_price' => 7, 't_actual' => 8, 'n_price' => 9,
-                    't_nam' => 10, 'income' => 12, 'income_pct' => 13, 'date_del' => 14,
-                    'term' => 15, 'due' => 16, 'si' => 17, 'buyer' => 18, 'remarks' => 19,
-                    'supplier' => 20, 'address' => 21, 'tin' => 22, 'contact' => 23
+                    't_nam' => 10, 'wht' => 11, 't_due' => 12, 'income' => 14, 'income_pct' => 15, 'date_del' => 16,
+                    'term' => 17, 'due' => 18, 'si' => 19, 'paid_status' => 20, 'buyer' => 21, 'remarks' => 22,
+                    'supplier' => 23, 'address' => 24, 'tin' => 25, 'contact' => 26
                 ];
                 
                 // Dynamically reassign indices based on header names
@@ -122,13 +120,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                         if(strpos($col, 'SUPPLIER') !== false && strpos($col, 'PRICE') !== false) $idx['s_price'] = $i;
                         if(strpos($col, 'ACTUAL AMOUNT') !== false) $idx['t_actual'] = $i;
                         if(strpos($col, 'NAM UNIT PRICE') !== false) $idx['n_price'] = $i;
-                        if(strpos($col, 'TOTAL NAM AMOUNT') !== false && strpos($col, 'SUB') === false) $idx['t_nam'] = $i;
+                        if(strpos($col, 'TOTAL NAM AMOUNT') !== false && strpos($col, 'SUB') === false && strpos($col, 'WITHHOLDING') === false && strpos($col, 'DUE') === false) $idx['t_nam'] = $i;
+                        
+                        // NEW: Catch Withholding Tax and Total Amount Due
+                        if(strpos($col, 'WITHHOLDING') !== false) $idx['wht'] = $i;
+                        if(strpos($col, 'AMOUNT DUE') !== false) $idx['t_due'] = $i;
+                        
                         if($col === 'INCOME') $idx['income'] = $i;
                         if(strpos($col, 'PERCENT') !== false) $idx['income_pct'] = $i;
                         if(strpos($col, 'DELIVERED') !== false) $idx['date_del'] = $i;
                         if(strpos($col, 'TERM') !== false) $idx['term'] = $i;
-                        if(strpos($col, 'DUE') !== false) $idx['due'] = $i;
+                        if(strpos($col, 'DUE') !== false && strpos($col, 'AMOUNT') === false) $idx['due'] = $i;
                         if(strpos($col, 'SI NUMBER') !== false) $idx['si'] = $i;
+                        if(strpos($col, 'PAID') !== false || strpos($col, 'UNPAID') !== false) $idx['paid_status'] = $i;
                         if($col === 'BUYER') $idx['buyer'] = $i;
                         if(strpos($col, 'REMARKS') !== false) $idx['remarks'] = $i;
                         if($col === 'SUPPLIER') $idx['supplier'] = $i;
@@ -138,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     }
                 }
 
-                $row = 1; // Start at 1 because we consumed the header
+                $row = 1; 
                 while (($data = fgetcsv($handle, 10000, ",")) !== FALSE) {
                     $row++;
                     // Skip empty rows (blank date check)
@@ -159,6 +163,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $nam_unit_price  = $cleanPrice($data[$idx['n_price']] ?? 0);
                     $total_nam       = $cleanPrice($data[$idx['t_nam']] ?? 0);
                     
+                    $withholding_tax  = $cleanPrice($data[$idx['wht']] ?? 0);
+                    $total_amount_due = $cleanPrice($data[$idx['t_due']] ?? 0);
+                    
                     $income          = $cleanPrice($data[$idx['income']] ?? 0);
                     $income_percent  = (float) preg_replace('/[^0-9\.-]/', '', $data[$idx['income_pct']] ?? 0);
                     
@@ -167,6 +174,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $due_date = $parseDate($data[$idx['due']] ?? null);
                     
                     $si_number = $data[$idx['si']] ?? '';
+                    
+                    // --- PARSE PAYMENT STATUS AND DATE PAID ---
+                    $raw_paid = strtoupper(trim($data[$idx['paid_status']] ?? ''));
+                    $payment_status = 'Pending';
+                    $date_paid = null;
+                    if (strpos($raw_paid, 'PAID') !== false) {
+                        $payment_status = 'Paid';
+                        if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $raw_paid, $matches)) {
+                            $date_paid = $parseDate($matches[1]);
+                        } else {
+                            $date_paid = date('Y-m-d'); 
+                        }
+                    }
+
                     $buyer = $data[$idx['buyer']] ?? ''; 
                     $remarks = $data[$idx['remarks']] ?? '';
                     $supplier = $data[$idx['supplier']] ?? '';
@@ -179,13 +200,22 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['csv_file'])) {
                     $sql = "INSERT INTO sales (
                         date, sn, po_number, company, category, item, quantity_requested,
                         suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount,
+                        withholding_tax, total_amount_due,
                         income, income_percent, date_delivered, payment_term, due_date,
-                        si_number, buyer, remarks, supplier, address, tin, sales_invoice_no, contact_person_contact
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        si_number, buyer, remarks, supplier, address, tin, sales_invoice_no, contact_person_contact,
+                        payment_status, date_paid
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     
                     $stmt = $conn->prepare($sql);
                     if ($stmt) {
-                        $stmt->bind_param("ssssssiddddddsssssssssss", $date, $sn, $po_number, $company, $category, $item, $quantity, $suppliers_price, $total_actual, $nam_unit_price, $total_nam, $income, $income_percent, $date_delivered, $payment_term, $due_date, $si_number, $buyer, $remarks, $supplier, $address, $tin, $sales_invoice_no, $contact_person);
+                        $stmt->bind_param("ssssssiddddddddsssssssssssss", 
+                            $date, $sn, $po_number, $company, $category, $item, $quantity, 
+                            $suppliers_price, $total_actual, $nam_unit_price, $total_nam, 
+                            $withholding_tax, $total_amount_due,
+                            $income, $income_percent, $date_delivered, $payment_term, $due_date, 
+                            $si_number, $buyer, $remarks, $supplier, $address, $tin, $sales_invoice_no, $contact_person,
+                            $payment_status, $date_paid
+                        );
                         
                         if ($stmt->execute()) {
                             $imported++;

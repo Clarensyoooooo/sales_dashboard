@@ -5,11 +5,12 @@ requirePermission('manage_sales');
 
 $conn = getDBConnection();
 
-// --- 1. AUTO-HEAL DATABASE: Sync missing columns from import.php ---
-// This safely checks and adds any new columns without touching existing data
+// --- AUTO-HEAL DATABASE: Sync missing columns ---
 $required_columns = [
     'payment_status' => "VARCHAR(20) DEFAULT 'Pending'",
-    'date_paid' => "DATETIME DEFAULT NULL",
+    'date_paid' => "DATE DEFAULT NULL",
+    'withholding_tax' => "DECIMAL(15,2) DEFAULT 0.00",
+    'total_amount_due' => "DECIMAL(15,2) DEFAULT 0.00",
     'is_reserved' => "TINYINT(1) DEFAULT 0",
     'sn' => "VARCHAR(100) DEFAULT NULL",
     'po_number' => "VARCHAR(100) DEFAULT NULL",
@@ -26,12 +27,11 @@ $required_columns = [
 foreach ($required_columns as $col => $definition) {
     $check = $conn->query("SHOW COLUMNS FROM sales LIKE '$col'");
     if ($check && $check->num_rows == 0) {
-        // Automatically add the missing column so the app doesn't break
         $conn->query("ALTER TABLE sales ADD COLUMN $col $definition");
     }
 }
 
-// --- 2. AJAX HANDLER FOR PAYMENT STATUS UPDATES ---
+// --- AJAX HANDLER FOR PAYMENT STATUS UPDATES ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_payment_status') {
     header('Content-Type: application/json');
     $id = intval($_POST['id']);
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     $details = $conn->query("SELECT company, item FROM sales WHERE id = $id")->fetch_assoc();
     
-    $date_paid_sql = ($new_status === 'Paid') ? "NOW()" : "NULL";
+    $date_paid_sql = ($new_status === 'Paid') ? "CURRENT_DATE()" : "NULL";
     $sql = "UPDATE sales SET payment_status = '$new_status', date_paid = $date_paid_sql WHERE id = $id";
     
     if($conn->query($sql)) {
@@ -52,15 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     exit;
 }
-
-// --- 3. FETCH FINANCE KPIs (For Delivered Items Only) ---
-$kpiSql = "SELECT 
-            SUM(CASE WHEN payment_status = 'Paid' THEN total_nam_amount ELSE 0 END) as collected,
-            SUM(CASE WHEN payment_status = 'Pending' THEN total_nam_amount ELSE 0 END) as outstanding,
-            SUM(CASE WHEN payment_status = 'Pending' AND due_date < CURRENT_DATE() AND due_date IS NOT NULL AND due_date != '0000-00-00' THEN total_nam_amount ELSE 0 END) as overdue
-           FROM sales 
-           WHERE date_delivered IS NOT NULL AND date_delivered != '0000-00-00'";
-$finance_kpi = $conn->query($kpiSql)->fetch_assoc();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -72,48 +63,66 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        .table-responsive { max-height: 70vh; overflow-y: auto; }
+        .table-responsive { max-height: 65vh; overflow-y: auto; }
         thead th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; }
-        .kpi-card { border-left: 4px solid; transition: transform 0.2s; }
-        .kpi-card:hover { transform: translateY(-3px); }
-        .kpi-card.blue { border-color: #0d6efd; }
-        .kpi-card.orange { border-color: #fd7e14; }
-        .kpi-card.green { border-color: #198754; }
+        
+        .kpi-card { border-radius: 12px; transition: transform 0.2s, box-shadow 0.2s; border: none; }
+        .kpi-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.08) !important; }
+        .icon-circle { width: 45px; height: 45px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+        
         .table-sm td, .table-sm th { font-size: 0.85rem; vertical-align: middle; white-space: nowrap; }
         .col-truncate { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .row-overdue { background-color: #ffe6e6 !important; }
         .row-neardue { background-color: #fff4cc !important; }
-        .row-paid { opacity: 0.7; background-color: #f1f8f5 !important; }
+        .row-paid { opacity: 0.75; background-color: #f8faf9 !important; }
+        
+        .filter-panel { background: #ffffff; border-radius: 12px; border: 1px solid #eef2f5; }
+        .filter-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.2rem; }
     </style>
 </head>
 <body class="bg-light">
 
     <?php include 'navbar.php'; ?>
 
-    <div class="container-fluid mt-4 px-4">
+    <div class="container-fluid mt-4 px-4 pb-5">
         
         <div class="row g-3 mb-3">
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card blue h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Total Records (Filtered)</h6>
-                        <h2 class="mb-0 fw-bold text-dark" id="totalRecords">0</h2>
+                <div class="card shadow-sm kpi-card h-100 bg-white">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-secondary bg-opacity-10 text-secondary me-3">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Records</h6>
+                            <h3 class="mb-0 fw-bold text-dark" id="kpi-records">0</h3>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card orange h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Pending Delivery</h6>
-                        <h2 class="mb-0 fw-bold text-warning" id="pendingCount">0</h2>
+                <div class="card shadow-sm kpi-card h-100 bg-white">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-warning bg-opacity-10 text-warning me-3">
+                            <i class="fas fa-truck-loading"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Pending Delivery</h6>
+                            <h3 class="mb-0 fw-bold text-dark" id="kpi-pending">0</h3>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card green h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted text-uppercase fw-bold small mb-1">Total Sales (Filtered)</h6>
-                        <h2 class="mb-0 fw-bold text-success" id="filteredSales">₱0.00</h2>
+                <div class="card shadow-sm kpi-card h-100 bg-white">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-primary bg-opacity-10 text-primary me-3">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Total Sales (Gross)</h6>
+                            <h3 class="mb-0 fw-bold text-primary" id="kpi-sales">₱0.00</h3>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -121,26 +130,41 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
 
         <div class="row g-3 mb-4">
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card border-success h-100 bg-success bg-opacity-10">
-                    <div class="card-body">
-                        <h6 class="text-success text-uppercase fw-bold small mb-1"><i class="fas fa-check-circle me-1"></i> Total Collected (Paid)</h6>
-                        <h4 class="mb-0 fw-bold text-success">₱<?= number_format($finance_kpi['collected'] ?? 0, 2) ?></h4>
+                <div class="card shadow-sm kpi-card h-100 bg-white border-start border-success border-4">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-success bg-opacity-10 text-success me-3">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Total Collected</h6>
+                            <h3 class="mb-0 fw-bold text-success" id="kpi-collected">₱0.00</h3>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card border-primary h-100 bg-primary bg-opacity-10">
-                    <div class="card-body">
-                        <h6 class="text-primary text-uppercase fw-bold small mb-1"><i class="fas fa-hand-holding-usd me-1"></i> Outstanding Receivables</h6>
-                        <h4 class="mb-0 fw-bold text-primary">₱<?= number_format($finance_kpi['outstanding'] ?? 0, 2) ?></h4>
+                <div class="card shadow-sm kpi-card h-100 bg-white border-start border-info border-4">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-info bg-opacity-10 text-info me-3">
+                            <i class="fas fa-hand-holding-usd"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Outstanding</h6>
+                            <h3 class="mb-0 fw-bold text-info" id="kpi-outstanding">₱0.00</h3>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 kpi-card border-danger h-100 bg-danger bg-opacity-10">
-                    <div class="card-body">
-                        <h6 class="text-danger text-uppercase fw-bold small mb-1"><i class="fas fa-exclamation-triangle me-1"></i> Overdue Collections</h6>
-                        <h4 class="mb-0 fw-bold text-danger">₱<?= number_format($finance_kpi['overdue'] ?? 0, 2) ?></h4>
+                <div class="card shadow-sm kpi-card h-100 bg-white border-start border-danger border-4">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="icon-circle bg-danger bg-opacity-10 text-danger me-3">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <h6 class="text-muted fw-bold small mb-0 text-uppercase">Overdue Collections</h6>
+                            <h3 class="mb-0 fw-bold text-danger" id="kpi-overdue">₱0.00</h3>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -148,54 +172,58 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
 
         <div id="alertContainer"></div>
 
-        <div class="card shadow-sm border-0 mb-3">
-            <div class="card-body bg-white py-3">
-                <div class="row g-2 align-items-end">
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold text-muted">Delivery</label>
-                        <select id="filterStatus" class="form-select form-select-sm" onchange="applyFilters()">
-                            <option value="">All Statuses</option>
-                            <option value="pending">Pending Delivery</option>
-                            <option value="partial">Partially Delivered</option>
-                            <option value="delivered">Delivered</option>
-                            <option value="reserved">Reserved</option>
-                        </select>
+        <div class="filter-panel shadow-sm p-3 mb-3">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-2">
+                    <label class="fw-bold text-muted filter-label"><i class="fas fa-truck me-1"></i> Delivery</label>
+                    <select id="filterStatus" class="form-select form-select-sm" onchange="applyFilters()">
+                        <option value="">All Deliveries</option>
+                        <option value="pending">Pending</option>
+                        <option value="partial">Partial</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="reserved">Reserved</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="fw-bold text-muted filter-label"><i class="fas fa-money-bill-wave me-1"></i> Payment</label>
+                    <select id="filterPayment" class="form-select form-select-sm" onchange="applyFilters()">
+                        <option value="">All Payments</option>
+                        <option value="Pending">Unpaid</option>
+                        <option value="Paid">Paid</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="fw-bold text-muted filter-label"><i class="fas fa-building me-1"></i> Company</label>
+                    <select id="filterCompany" class="form-select form-select-sm" onchange="applyFilters()">
+                        <option value="">All Companies</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="fw-bold text-muted filter-label"><i class="fas fa-tags me-1"></i> Category</label>
+                    <select id="filterCategory" class="form-select form-select-sm" onchange="applyFilters()">
+                        <option value="">All Categories</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="fw-bold text-muted filter-label"><i class="fas fa-calendar-alt me-1"></i> Date Range</label>
+                    <div class="input-group input-group-sm">
+                        <input type="date" id="dateFrom" class="form-control" onchange="applyFilters()">
+                        <span class="input-group-text bg-light text-muted border-start-0 border-end-0">to</span>
+                        <input type="date" id="dateTo" class="form-control" onchange="applyFilters()">
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold text-muted">Payment</label>
-                        <select id="filterPayment" class="form-select form-select-sm" onchange="applyFilters()">
-                            <option value="">All Payments</option>
-                            <option value="Pending">Unpaid (Pending)</option>
-                            <option value="Paid">Paid</option>
-                        </select>
+                </div>
+                
+                <div class="col-md-10 mt-2">
+                    <div class="input-group input-group-sm shadow-sm rounded">
+                        <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                        <input type="text" id="searchItem" class="form-control border-start-0 ps-0" placeholder="Search Item, PO, S/N, Remarks, TIN..." onkeyup="applyFilters()">
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold text-muted">Company</label>
-                        <select id="filterCompany" class="form-select form-select-sm" onchange="applyFilters()">
-                            <option value="">All Companies</option>
-                        </select>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small fw-bold text-muted">Category</label>
-                        <select id="filterCategory" class="form-select form-select-sm" onchange="applyFilters()">
-                            <option value="">All Categories</option>
-                        </select>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label small fw-bold text-muted">Search</label>
-                        <div class="input-group input-group-sm">
-                            <input type="text" id="searchItem" class="form-control" placeholder="Item, PO, Remarks, TIN..." onkeyup="applyFilters()">
-                            <button class="btn btn-outline-secondary" onclick="clearFilters()" type="button" title="Reset"><i class="fas fa-undo"></i></button>
-                        </div>
-                    </div>
-                    <div class="col-12 mt-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="small fw-bold text-muted">Date Range:</span>
-                            <input type="date" id="dateFrom" class="form-control form-control-sm" style="width: 140px;" onchange="applyFilters()">
-                            <span class="text-muted small">to</span>
-                            <input type="date" id="dateTo" class="form-control form-control-sm" style="width: 140px;" onchange="applyFilters()">
-                        </div>
-                    </div>
+                </div>
+                <div class="col-md-2 mt-2">
+                    <button class="btn btn-sm btn-outline-secondary w-100 fw-bold" onclick="clearFilters()" type="button">
+                        <i class="fas fa-undo me-1"></i> Reset Filters
+                    </button>
                 </div>
             </div>
         </div>
@@ -206,7 +234,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             </button>
         </div>
 
-        <div class="card shadow-sm border-0">
+        <div class="card shadow-sm border-0 mb-4">
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover table-striped table-sm mb-0" id="recordsTable">
@@ -215,7 +243,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <th class="ps-3" style="width: 40px;">
                                     <input class="form-check-input border-secondary" type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
                                 </th>
-                                <th>Delivery Status</th>
+                                <th>Delivery</th>
                                 <th>Date</th>
                                 <th>S/N</th>
                                 <th>PO No.</th>
@@ -230,12 +258,15 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <th class="text-end">Total Cost</th>
                                 <th class="text-end">Unit Price</th>
                                 <th class="text-end">Total Sales</th>
+                                <th class="text-end text-danger">WHT (Tax)</th>
+                                <th class="text-end text-success">Total Due</th>
                                 <th class="text-end">Income</th>
                                 <th class="text-end">Margin</th>
                                 <th>Supplier</th>
                                 <th>Delivered</th>
+                                <th class="text-center">Payment</th>
                                 <th>Pay Term</th>
-                                <th>Due Tracker</th>
+                                <th class="text-center">Due Tracker</th>
                                 <th>SI No.</th>
                                 <th>Buyer</th> 
                                 <th>Inv No.</th>
@@ -244,7 +275,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                             </tr>
                         </thead>
                         <tbody id="recordsBody">
-                            <tr><td colspan="27" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
+                            <tr><td colspan="30" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading records...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -256,13 +287,13 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     </div>
                 </div>
 
-                <div class="d-flex justify-content-between align-items-center p-3 border-top" id="paginationBar">
+                <div class="d-flex justify-content-between align-items-center p-3 border-top bg-light" id="paginationBar">
                     <span class="small text-muted">Showing page <span id="currentPage" class="fw-bold">1</span> of <span id="totalPages">1</span></span>
-                    <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" onclick="changePage('first')"><i class="fas fa-angle-double-left"></i></button>
-                        <button class="btn btn-outline-secondary" onclick="changePage('prev')"><i class="fas fa-angle-left"></i></button>
-                        <button class="btn btn-outline-secondary" onclick="changePage('next')"><i class="fas fa-angle-right"></i></button>
-                        <button class="btn btn-outline-secondary" onclick="changePage('last')"><i class="fas fa-angle-double-right"></i></button>
+                    <div class="btn-group btn-group-sm shadow-sm">
+                        <button class="btn btn-outline-secondary bg-white" onclick="changePage('first')"><i class="fas fa-angle-double-left"></i></button>
+                        <button class="btn btn-outline-secondary bg-white" onclick="changePage('prev')"><i class="fas fa-angle-left"></i></button>
+                        <button class="btn btn-outline-secondary bg-white" onclick="changePage('next')"><i class="fas fa-angle-right"></i></button>
+                        <button class="btn btn-outline-secondary bg-white" onclick="changePage('last')"><i class="fas fa-angle-double-right"></i></button>
                     </div>
                 </div>
             </div>
@@ -374,22 +405,23 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                                 <label class="form-label small fw-bold">Quantity <span class="text-danger">*</span></label>
                                 <input type="number" id="editQuantity" class="form-control form-control-sm" required min="1" onchange="calculateEdit()">
                             </div>
-                            
-                            <div class="col-md-2"></div> <div class="col-md-3">
+                            <div class="col-md-2">
                                 <label class="form-label small fw-bold">Supplier Price</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">₱</span>
                                     <input type="number" id="editSupplierPrice" class="form-control" step="0.01" onchange="calculateEdit()">
                                 </div>
                             </div>
-                            <div class="col-md-3">
+                        </div>
+                        
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-2">
                                 <label class="form-label small fw-bold text-primary">NAM Unit Price</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">₱</span>
                                     <input type="number" id="editNAMPrice" class="form-control border-primary" step="0.01" required onchange="calculateEdit()">
                                 </div>
                             </div>
-                            
                             <div class="col-md-2">
                                 <label class="form-label small fw-bold text-muted">Total Cost</label>
                                 <input type="number" id="editTotalActual" class="form-control form-control-sm bg-light" readonly>
@@ -397,6 +429,14 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                             <div class="col-md-2">
                                 <label class="form-label small fw-bold text-success">Total Sales</label>
                                 <input type="number" id="editTotalNAM" class="form-control form-control-sm bg-light fw-bold text-success" readonly>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-danger">WHT (Tax)</label>
+                                <input type="number" id="editWHT" class="form-control form-control-sm border-danger" step="0.01" onchange="calculateEdit()">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-primary">Total Due</label>
+                                <input type="number" id="editTotalDue" class="form-control form-control-sm bg-light fw-bold text-primary" readonly>
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label small fw-bold text-muted">Income</label>
@@ -572,12 +612,39 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 return true;
             });
 
-            document.getElementById('totalRecords').textContent = filteredRecords.length.toLocaleString();
-            const totalSales = filteredRecords.reduce((sum, r) => sum + parseFloat(r.total_nam_amount || 0), 0);
-            document.getElementById('filteredSales').textContent = formatCurrency(totalSales);
+            let totalSales = 0, pendingCount = 0;
+            let collected = 0, outstanding = 0, overdue = 0;
+            
+            const today = new Date();
+            today.setHours(0,0,0,0);
 
-            const pending = filteredRecords.filter(r => !r.date_delivered || r.date_delivered === '0000-00-00').length;
-            document.getElementById('pendingCount').textContent = pending;
+            filteredRecords.forEach(r => {
+                const amount = parseFloat(r.total_nam_amount || 0);
+                const isDelivered = (r.date_delivered && r.date_delivered !== '0000-00-00');
+                
+                totalSales += amount;
+                if (!isDelivered) pendingCount++;
+                
+                if (isDelivered) {
+                    if (r.payment_status === 'Paid') {
+                        collected += amount;
+                    } else {
+                        outstanding += amount;
+                        if (r.due_date && r.due_date !== '0000-00-00') {
+                            const dueObj = new Date(r.due_date);
+                            dueObj.setHours(0,0,0,0);
+                            if (dueObj < today) overdue += amount;
+                        }
+                    }
+                }
+            });
+
+            document.getElementById('kpi-records').textContent = filteredRecords.length.toLocaleString();
+            document.getElementById('kpi-sales').textContent = formatCurrency(totalSales);
+            document.getElementById('kpi-pending').textContent = pendingCount.toLocaleString();
+            document.getElementById('kpi-collected').textContent = formatCurrency(collected);
+            document.getElementById('kpi-outstanding').textContent = formatCurrency(outstanding);
+            document.getElementById('kpi-overdue').textContent = formatCurrency(overdue);
 
             currentPage = 1;
             renderTable();
@@ -643,6 +710,10 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                 let dueBadge = '';
                 let rowClass = '';
                 let payActionBtn = '';
+                
+                let payStatusBadge = payStatus === 'Paid' 
+                    ? `<span class="badge bg-success"><i class="fas fa-check"></i> Paid</span><br><small class="text-muted fw-bold">${r.date_paid ? r.date_paid : ''}</small>` 
+                    : `<span class="badge bg-secondary">Pending</span>`;
 
                 if (isDelivered) {
                     if (payStatus === 'Paid') {
@@ -695,10 +766,13 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
                     <td class="text-end font-monospace text-muted">${formatCurrency(r.total_actual_amount)}</td>
                     <td class="text-end font-monospace">${formatCurrency(r.nam_unit_price)}</td>
                     <td class="text-end font-monospace fw-bold text-primary">${formatCurrency(r.total_nam_amount)}</td>
+                    <td class="text-end font-monospace text-danger">${formatCurrency(r.withholding_tax || 0)}</td>
+                    <td class="text-end font-monospace fw-bold text-success">${formatCurrency(r.total_amount_due || 0)}</td>
                     <td class="text-end font-monospace text-success">${formatCurrency(r.income)}</td>
                     <td class="text-end small">${parseFloat(r.income_percent || 0).toFixed(1)}%</td>
                     <td>${r.supplier || ''}</td>
                     <td class="${isDelivered ? 'text-success fw-bold' : 'text-muted'}">${isDelivered ? r.date_delivered : '-'}</td>
+                    <td class="text-center">${payStatusBadge}</td>
                     <td>${r.payment_term || ''}</td>
                     <td class="text-center">
                         <div class="mb-1 text-dark small">${(!dueStr || dueStr === '0000-00-00') ? '--' : r.due_date}</div>
@@ -841,6 +915,7 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             renderTable();
         }
 
+        // --- UPDATED TO PRE-FILL THE NEW FIELDS ---
         function editRecord(id) {
             const r = allRecords.find(item => item.id == id);
             if(!r) return;
@@ -858,6 +933,10 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             document.getElementById('editQuantity').value = r.quantity_requested;
             document.getElementById('editSupplierPrice').value = r.suppliers_price;
             document.getElementById('editNAMPrice').value = r.nam_unit_price;
+            
+            // PRE-FILL NEW FIELDS
+            document.getElementById('editWHT').value = r.withholding_tax || 0;
+            
             document.getElementById('editSupplier').value = r.supplier;
             document.getElementById('editDateDelivered').value = r.date_delivered; 
             document.getElementById('editPaymentTerm').value = r.payment_term;
@@ -871,16 +950,20 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             editModal.show();
         }
 
+        // --- UPDATED AUTO-CALCULATE LOGIC ---
         function calculateEdit() {
             const qty = parseFloat(document.getElementById('editQuantity').value) || 0;
             const sPrice = parseFloat(document.getElementById('editSupplierPrice').value) || 0;
             const nPrice = parseFloat(document.getElementById('editNAMPrice').value) || 0;
+            const wht = parseFloat(document.getElementById('editWHT').value) || 0;
 
             const tAct = qty * sPrice;
             const tNam = qty * nPrice;
+            const tDue = tNam - wht;
             
             document.getElementById('editTotalActual').value = tAct.toFixed(2);
             document.getElementById('editTotalNAM').value = tNam.toFixed(2);
+            document.getElementById('editTotalDue').value = tDue.toFixed(2);
             document.getElementById('editIncome').value = (tNam - tAct).toFixed(2);
         }
 
@@ -888,14 +971,16 @@ $finance_kpi = $conn->query($kpiSql)->fetch_assoc();
             e.preventDefault();
             const formData = new FormData();
             
+            // --- ADDED NEW FIELDS TO THE MAP ---
             const map = {
                 'id': 'editId', 'date': 'editDate', 'sn': 'editSN', 'po_number': 'editPO',
                 'company': 'editCompany', 'address': 'editAddress', 'tin': 'editTIN',
                 'contact_person_contact': 'editContact', 'category': 'editCategory', 'item': 'editItem',
                 'quantity_requested': 'editQuantity', 'suppliers_price': 'editSupplierPrice',
-                'nam_unit_price': 'editNAMPrice', 'supplier': 'editSupplier', 'date_delivered': 'editDateDelivered',
+                'nam_unit_price': 'editNAMPrice', 'withholding_tax': 'editWHT', 
+                'supplier': 'editSupplier', 'date_delivered': 'editDateDelivered',
                 'payment_term': 'editPaymentTerm', 'due_date': 'editDueDate', 'si_number': 'editSINumber',
-                'buyer': 'editBuyer', // Send Buyer Data
+                'buyer': 'editBuyer',
                 'sales_invoice_no': 'editSalesInvoiceNo', 'remarks': 'editRemarks'
             };
 

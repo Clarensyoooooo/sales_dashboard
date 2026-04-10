@@ -1,5 +1,5 @@
 <?php
-// api.php - Updated to fix Account Manager drill-down subquery issues
+// api.php - Updated to fix Account Manager drill-down and handle advanced Date Groupings
 header('Content-Type: application/json');
 require_once 'config.php';
 
@@ -31,7 +31,7 @@ function executeQuery($conn, $sql, $types = "", $params = []) {
 $where_clauses = ["1=1"];
 $params = [];
 $types = "";
-$manager_companies = []; // Store this for the growth logic reuse
+$manager_companies = []; 
 
 if (!empty($_GET['start_date'])) {
     $where_clauses[] = "date >= ?";
@@ -57,7 +57,6 @@ if (!empty($_GET['manager'])) {
     if ($_GET['manager'] === 'Unassigned') {
         $where_clauses[] = "company NOT IN (SELECT company_name FROM company_assignments)";
     } else {
-        // Pre-fetch companies to avoid MySQL Collation mismatch in subqueries
         $mgr = $_GET['manager'];
         $mgr_res = $conn->query("SELECT company_name FROM company_assignments WHERE employee_name = '" . $conn->real_escape_string($mgr) . "'");
         if ($mgr_res) {
@@ -67,7 +66,7 @@ if (!empty($_GET['manager'])) {
         }
         
         if (empty($manager_companies)) {
-            $where_clauses[] = "1=0"; // Manager has no companies yet, return empty
+            $where_clauses[] = "1=0"; 
         } else {
             $placeholders = implode(',', array_fill(0, count($manager_companies), '?'));
             $where_clauses[] = "company IN ($placeholders)";
@@ -159,13 +158,18 @@ while ($r = $result->fetch_assoc()) {
 // --- 4. Chart Data ---
 $groupBy = $_GET['group_by'] ?? 'day'; 
 if ($groupBy === 'month') {
-    $sql = "SELECT DATE_FORMAT(date, '%b') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY MONTH(date), label ORDER BY MONTH(date)";
+    // Upgraded: Groups by year AND month so it doesn't break when searching across multiple years!
+    $sql = "SELECT DATE_FORMAT(date, '%b %Y') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), MONTH(date), label ORDER BY YEAR(date), MONTH(date)";
 } elseif ($groupBy === 'year') {
     $sql = "SELECT YEAR(date) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date) ORDER BY YEAR(date)";
 } elseif ($groupBy === 'quarter') {
     $sql = "SELECT CONCAT('Q', QUARTER(date), ' ', YEAR(date)) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), QUARTER(date) ORDER BY YEAR(date), QUARTER(date)";
+} elseif ($groupBy === 'week') {
+    // NEW: Handles the new 'Weekly' grouping option!
+    $sql = "SELECT CONCAT('Week ', WEEK(date, 1), ', ', YEAR(date)) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), WEEK(date, 1) ORDER BY YEAR(date), WEEK(date, 1)";
 } else {
-    $sql = "SELECT DATE_FORMAT(date, '%d') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY date ORDER BY date";
+    // Upgraded: Shows Month AND Day (e.g. Jan 15) so you don't just see random numbers on the timeline
+    $sql = "SELECT DATE_FORMAT(date, '%b %d') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY date ORDER BY date";
 }
 
 $chart_data = [];

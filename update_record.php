@@ -5,7 +5,6 @@ requirePermission('manage_sales');
 
 header('Content-Type: application/json');
 
-// Ensure this is a POST request
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
     exit;
@@ -13,12 +12,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $conn = getDBConnection();
 
-// Helper function to safely handle empty dates so MySQL doesn't crash
 function cleanDate($val) {
     return empty(trim($val ?? '')) ? null : trim($val);
 }
 
-// 1. Catch all basic text and date fields
+// 1. Catch text and date fields
 $id = intval($_POST['id']);
 $date = cleanDate($_POST['date']);
 $sn = trim($_POST['sn'] ?? '');
@@ -31,17 +29,18 @@ $category = trim($_POST['category'] ?? '');
 $item = trim($_POST['item'] ?? '');
 $qty = intval($_POST['quantity_requested'] ?? 0);
 
-// 2. Catch financial inputs
+// 2. Catch financial inputs (INCLUDING THE NEW WHT)
 $s_price = floatval($_POST['suppliers_price'] ?? 0);
 $n_price = floatval($_POST['nam_unit_price'] ?? 0);
+$wht = floatval($_POST['withholding_tax'] ?? 0);
 
-// 3. Auto-calculate totals on the server to prevent front-end tampering
+// 3. Auto-calculate totals on the server
 $t_actual = $qty * $s_price;
 $t_nam = $qty * $n_price;
+$t_due = $t_nam - $wht; // Calculate Total Due
 $income = $t_nam - $t_actual;
 $income_pct = ($t_nam > 0) ? ($income / $t_nam) * 100 : 0;
 
-// 4. Catch the newly added fields
 $supplier = trim($_POST['supplier'] ?? '');
 $date_delivered = cleanDate($_POST['date_delivered']);
 $payment_term = trim($_POST['payment_term'] ?? '');
@@ -51,11 +50,11 @@ $buyer = trim($_POST['buyer'] ?? '');
 $sales_invoice_no = trim($_POST['sales_invoice_no'] ?? '');
 $remarks = trim($_POST['remarks'] ?? '');
 
-// 5. Build the massive update query
+// 4. Build the query WITH the new columns
 $sql = "UPDATE sales SET 
         date=?, sn=?, po_number=?, company=?, address=?, tin=?, contact_person_contact=?, 
         category=?, item=?, quantity_requested=?, suppliers_price=?, total_actual_amount=?, 
-        nam_unit_price=?, total_nam_amount=?, income=?, income_percent=?, 
+        nam_unit_price=?, total_nam_amount=?, withholding_tax=?, total_amount_due=?, income=?, income_percent=?, 
         supplier=?, date_delivered=?, payment_term=?, due_date=?, 
         si_number=?, buyer=?, sales_invoice_no=?, remarks=? 
         WHERE id=?";
@@ -63,18 +62,17 @@ $sql = "UPDATE sales SET
 $stmt = $conn->prepare($sql);
 
 if ($stmt) {
-    // Bind all 25 parameters (s = string, i = integer, d = double/decimal)
-    $stmt->bind_param("sssssssssidddddsssssssssi", 
+    // Bind all 27 parameters (s=string, i=int, d=double)
+    $stmt->bind_param("sssssssssiddddddddssssssssi", 
         $date, $sn, $po_number, $company, $address, $tin, $contact, 
         $category, $item, $qty, $s_price, $t_actual, 
-        $n_price, $t_nam, $income, $income_pct, 
+        $n_price, $t_nam, $wht, $t_due, $income, $income_pct, 
         $supplier, $date_delivered, $payment_term, $due_date, 
         $si_number, $buyer, $sales_invoice_no, $remarks, 
         $id
     );
 
     if ($stmt->execute()) {
-        // Log the edit for security/tracking
         logAction('Updated Record', "Updated sales record ID $id ($item for $company)");
         echo json_encode(['success' => true]);
     } else {

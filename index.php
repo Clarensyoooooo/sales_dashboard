@@ -21,8 +21,8 @@
         /* KPI Cards */
         .kpi-card { border: none; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); transition: transform 0.2s; position: relative; overflow: hidden; background: white; }
         .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
-        .kpi-value { font-size: 28px; font-weight: 700; margin-top: 5px; color: #0f172a; }
-        .kpi-label { font-size: 12px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+        .kpi-value { font-size: 26px; font-weight: 700; margin-top: 5px; color: #0f172a; white-space: nowrap;}
+        .kpi-label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
         .icon-bg { position: absolute; right: -10px; bottom: -10px; font-size: 80px; opacity: 0.05; transform: rotate(-15deg); }
         
         /* Charts */
@@ -74,18 +74,43 @@
                 <div>
                     <label class="small fw-bold text-muted d-block mb-1">Time Period</label>
                     <select id="periodFilter" class="form-select form-select-sm shadow-none border-secondary-subtle" style="width: 150px; font-weight: 600;" onchange="handlePeriodChange()">
-                        <option value="today">Daily (Today)</option>
-                        <option value="week">Weekly (This Week)</option>
-                        <option value="month" selected>Monthly (This Month)</option>
-                        <option value="quarter">Quarterly (This Year)</option>
-                        <option value="year">Yearly (This Year)</option>
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month" selected>This Month</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
+                        <option value="all_time">All Time (Historical)</option>
                         <option value="custom_month">Specific Month</option>
+                        <option value="custom_range">Custom Date Range</option>
                     </select>
                 </div>
-                <div id="monthPickerGroup" style="display:none;">
+                
+                <div id="monthPickerGroup" class="d-none">
                     <label class="small fw-bold text-muted d-block mb-1">Select Month</label>
                     <input type="month" id="monthPicker" class="form-control form-control-sm shadow-none" onchange="updateDashboard()">
                 </div>
+
+                <div id="customRangeGroup" class="d-none align-items-end gap-2 flex-wrap">
+                    <div>
+                        <label class="small fw-bold text-muted d-block mb-1">Start Date</label>
+                        <input type="date" id="rangeStart" class="form-control form-control-sm shadow-none" onchange="updateDashboard()">
+                    </div>
+                    <div>
+                        <label class="small fw-bold text-muted d-block mb-1">End Date</label>
+                        <input type="date" id="rangeEnd" class="form-control form-control-sm shadow-none" onchange="updateDashboard()">
+                    </div>
+                    <div>
+                        <label class="small fw-bold text-muted d-block mb-1 text-primary">Group Chart By</label>
+                        <select id="customGroupBy" class="form-select form-select-sm shadow-none border-primary text-primary fw-bold" onchange="updateDashboard()">
+                            <option value="day">Daily</option>
+                            <option value="week">Weekly</option>
+                            <option value="month">Monthly</option>
+                            <option value="quarter">Quarterly</option>
+                            <option value="year">Yearly</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div>
                     <label class="small fw-bold text-muted d-block mb-1">Targets (Min / Max)</label>
                     <div class="input-group input-group-sm">
@@ -118,8 +143,8 @@
         </div>
 
         <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="kpi-card p-4 h-100">
+            <div class="col-md-6 col-xl">
+                <div class="kpi-card p-3 h-100 border-start border-primary border-4">
                     <div class="kpi-label text-primary">Total Revenue</div>
                     <div class="kpi-value" id="totalSales">₱0.00</div>
                     <div class="mt-2" id="growthBadge"></div>
@@ -127,24 +152,34 @@
                     <i class="fas fa-coins icon-bg text-primary"></i>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="kpi-card p-4 h-100">
+            <div class="col-md-6 col-xl">
+                <div class="kpi-card p-3 h-100 border-start border-success border-4">
                     <div class="kpi-label text-success">Net Profit</div>
                     <div class="kpi-value" id="totalProfit">₱0.00</div>
                     <div class="small text-muted mt-1 fw-bold">Margin: <span class="text-success" id="profitMargin">0%</span></div>
                     <i class="fas fa-chart-line icon-bg text-success"></i>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="kpi-card p-4 h-100">
-                    <div class="kpi-label text-info">Avg. Order Value</div>
-                    <div class="kpi-value" id="avgOrder">₱0.00</div>
-                    <div class="small text-muted mt-1 fw-bold" id="orderCount">0 Orders</div>
-                    <i class="fas fa-shopping-cart icon-bg text-info"></i>
+            
+            <div class="col-md-6 col-xl">
+                <div class="kpi-card p-3 h-100 border-start border-info border-4">
+                    <div class="kpi-label text-info">Total Collected</div>
+                    <div class="kpi-value" id="kpiCollected">₱0.00</div>
+                    <div class="small text-muted mt-1 fw-bold">Unpaid: <span class="text-danger" id="kpiUnpaid">₱0.00</span></div>
+                    <i class="fas fa-hand-holding-usd icon-bg text-info"></i>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="kpi-card p-4 h-100">
+
+            <div class="col-md-6 col-xl">
+                <div class="kpi-card p-3 h-100 border-start border-warning border-4">
+                    <div class="kpi-label text-warning text-dark">Avg. Order Value</div>
+                    <div class="kpi-value" id="avgOrder">₱0.00</div>
+                    <div class="small text-muted mt-1 fw-bold" id="orderCount">0 Orders</div>
+                    <i class="fas fa-shopping-cart icon-bg text-warning"></i>
+                </div>
+            </div>
+            <div class="col-md-6 col-xl">
+                <div class="kpi-card p-3 h-100 border-start border-danger border-4">
                     <div class="kpi-label text-danger">Stock Alerts</div>
                     <div class="kpi-value" id="lowStockCount">0</div>
                     <a href="products.php" class="small text-decoration-none text-danger mt-1 d-block fw-bold">View Inventory <i class="fas fa-arrow-right ms-1"></i></a>
@@ -221,7 +256,7 @@
         </div>
 
         <div class="row g-4 mb-4">
-            <div class="col-lg-4">
+            <div class="col-lg-3">
                 <div class="chart-card">
                     <div class="chart-title">
                         <span><i class="fas fa-chart-pie text-warning me-2"></i>By Category</span>
@@ -231,7 +266,17 @@
                     </div>
                 </div>
             </div>
-            <div class="col-lg-4">
+            <div class="col-lg-3">
+                <div class="chart-card">
+                    <div class="chart-title">
+                        <span><i class="fas fa-hand-holding-usd text-success me-2"></i>Collection Status</span>
+                    </div>
+                    <div style="height: 300px; position: relative;">
+                        <canvas id="collectionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3">
                 <div class="chart-card">
                     <div class="chart-title">
                         <span><i class="fas fa-crown text-warning me-2"></i>Top Products</span>
@@ -241,7 +286,7 @@
                     </div>
                 </div>
             </div>
-            <div class="col-lg-4">
+            <div class="col-lg-3">
                 <div class="chart-card">
                     <div class="chart-title">
                         <span><i class="fas fa-tags text-danger me-2"></i>Supplier Costs</span>
@@ -286,22 +331,13 @@
 
     // --- COLOR PALETTE (Pleasant/Soft) ---
     const colors = {
-        primary:   '#6366f1', // Indigo-500
+        primary:   '#6366f1',
         primarySoft: 'rgba(99, 102, 241, 0.7)',
-        secondary: '#64748b', // Slate-500
-        success:   '#10b981', // Emerald-500
-        warning:   '#f59e0b', // Amber-500
-        danger:    '#ef4444', // Red-500
-        info:      '#0ea5e9', // Sky-500
-        
-        transparentPalette: [
-            'rgba(99, 102, 241, 0.6)', 
-            'rgba(16, 185, 129, 0.6)', 
-            'rgba(245, 158, 11, 0.6)', 
-            'rgba(239, 68, 68, 0.6)', 
-            'rgba(14, 165, 233, 0.6)', 
-            'rgba(139, 92, 246, 0.6)'
-        ],
+        secondary: '#64748b',
+        success:   '#10b981',
+        warning:   '#f59e0b',
+        danger:    '#ef4444',
+        info:      '#0ea5e9',
         palette: [
             '#6366f1', '#10b981', '#f59e0b', '#ef4444', 
             '#0ea5e9', '#8b5cf6', '#ec4899', '#f97316'
@@ -311,15 +347,13 @@
     const getEmpColor = (empName) => {
         if (!empName) return '#cbd5e1';
         const n = String(empName).toLowerCase();
-        
         if (n.includes('anne')) return '#419CA1';
         if (n.includes('cherry')) return '#AFD5F7';
         if (n.includes('glenda')) return '#007725';
         if (n.includes('ivy')) return '#AA338A';
         if (n.includes('ally')) return 'blue';
         if (n.includes('hannah')) return '#FC0FC0';
-        
-        return '#cbd5e1'; // Unassigned fallback
+        return '#cbd5e1'; 
     };
 
     // --- STATE ---
@@ -327,19 +361,37 @@
     let currentTotalSales = 0;
     let charts = {}; 
 
+    // --- FIX: UI UPDATER FOR DROPDOWN (USING BOOTSTRAP CLASSES) ---
     function handlePeriodChange() {
         const period = document.getElementById('periodFilter').value;
         const pickerGroup = document.getElementById('monthPickerGroup');
-        const picker = document.getElementById('monthPicker');
+        const rangeGroup = document.getElementById('customRangeGroup');
+        const monthPicker = document.getElementById('monthPicker');
+        const rangeStart = document.getElementById('rangeStart');
+        const rangeEnd = document.getElementById('rangeEnd');
         
+        // Hide both by default
+        pickerGroup.classList.add('d-none');
+        rangeGroup.classList.remove('d-flex');
+        rangeGroup.classList.add('d-none');
+
         if (period === 'custom_month') {
-            pickerGroup.style.display = 'block';
-            if (!picker.value) {
+            pickerGroup.classList.remove('d-none');
+            if (!monthPicker.value) {
                 const now = new Date();
-                picker.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
+                monthPicker.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
             }
-        } else {
-            pickerGroup.style.display = 'none';
+        } else if (period === 'custom_range') {
+            // Show range group with flex formatting
+            rangeGroup.classList.remove('d-none');
+            rangeGroup.classList.add('d-flex');
+            
+            if (!rangeStart.value || !rangeEnd.value) {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                rangeStart.value = todayStr;
+                rangeEnd.value = todayStr;
+            }
         }
         updateDashboard();
     }
@@ -407,7 +459,6 @@
         const period = document.getElementById('periodFilter').value;
         const now = new Date();
         
-        // --- LOCAL DATE FIX ---
         const toLocalYYYYMMDD = (d) => {
             const y = d.getFullYear();
             const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -432,24 +483,28 @@
         } else if (period === 'year') { 
             start = toLocalYYYYMMDD(new Date(now.getFullYear(), 0, 1)); 
             groupBy = 'month'; 
+        } else if (period === 'all_time') {
+            start = '2000-01-01'; 
+            end = today;
+            groupBy = 'year'; 
         } else if (period === 'custom_month') {
             const val = document.getElementById('monthPicker').value;
             if (val) { 
                 const [y, m] = val.split('-'); 
                 start = `${y}-${m}-01`; 
-                
-                // --- DATE CAPPING FIX FOR CUSTOM MONTH ---
                 if (parseInt(y) === now.getFullYear() && parseInt(m) === now.getMonth() + 1) {
                     end = today; 
                 } else {
                     end = toLocalYYYYMMDD(new Date(y, m, 0)); 
                 }
             }
-        } else {
-            groupBy = 'year';
+        } else if (period === 'custom_range') {
+            start = document.getElementById('rangeStart').value || today;
+            end = document.getElementById('rangeEnd').value || today;
+            
+            groupBy = document.getElementById('customGroupBy').value || 'day';
         }
 
-        // Added period param so API knows exactly how to offset the "previous" dates
         let url = `api.php?start_date=${start}&end_date=${end}&group_by=${groupBy}&period=${period}`;
         
         if(activeDrills.company) url += `&company=${encodeURIComponent(activeDrills.company)}`;
@@ -468,18 +523,36 @@
             document.getElementById('avgOrder').textContent = formatMoney(data.stats.avg_order_value);
             document.getElementById('orderCount').textContent = `${data.stats.total_orders} Orders`;
 
-            // --- DYNAMIC TARGET CALCULATION ---
-            let targetRev = 2500000; // Base: 1 Month
+            let amtCollected = 0, amtUnpaid = 0;
+            if(data.collection_status) {
+                data.collection_status.forEach(c => {
+                    if(c.status === 'Paid') amtCollected = c.sales;
+                    if(c.status === 'Unpaid') amtUnpaid = c.sales;
+                });
+            }
+            document.getElementById('kpiCollected').textContent = formatLarge(amtCollected);
+            document.getElementById('kpiUnpaid').textContent = formatMoney(amtUnpaid);
+
+            // Targets
+            let targetRev = 2500000; 
             if (period === 'today') {
-                targetRev = 2500000 / 30; // Rough daily target
+                targetRev = 2500000 / 30;
             } else if (period === 'week') {
-                targetRev = 2500000 / 4; // Rough weekly target
+                targetRev = 2500000 / 4; 
             } else if (period === 'quarter') {
                 const monthOfQuarter = (now.getMonth() % 3) + 1; 
                 targetRev = 2500000 * monthOfQuarter;
             } else if (period === 'year') {
                 const currentMonth = now.getMonth() + 1; 
                 targetRev = 2500000 * currentMonth;
+            } else if (period === 'all_time') {
+                targetRev = 2500000 * 12 * 3; 
+            } else if (period === 'custom_range') {
+                const d1 = new Date(start);
+                const d2 = new Date(end);
+                let diffDays = Math.ceil(Math.abs(d2 - d1) / (1000 * 60 * 60 * 24)) + 1;
+                if(diffDays === 0) diffDays = 1;
+                targetRev = (2500000 / 30) * diffDays; 
             }
             
             const targetPct = ((data.stats.total_sales / targetRev) * 100).toFixed(1);
@@ -489,7 +562,6 @@
             
             document.getElementById('targetBadge').innerHTML = `<small class="${targetColor} fw-bold" style="font-size: 0.75rem;"><i class="fas ${targetIcon} me-1"></i>${targetPct}% of ${formattedTarget} Target</small>`;
 
-            // --- GROWTH BADGE UPDATE WITH EXACT VALUE ---
             const growthPct = data.stats.growth_sales || 0;
             const growthVal = data.stats.growth_value || 0;
             const growthBadge = document.getElementById('growthBadge');
@@ -498,7 +570,6 @@
                 const icon = growthPct >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
                 const color = growthPct >= 0 ? 'text-success' : 'text-danger';
                 const displaySign = growthVal >= 0 ? '+' : '';
-                
                 const formattedDiff = '₱' + Math.abs(growthVal).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
                 
                 growthBadge.innerHTML = `
@@ -511,9 +582,9 @@
                 growthBadge.innerHTML = '';
             }
 
-            // Render Charts
             renderDailyChart(data.chart_data);
             renderCategoryChart(data.category_matrix);
+            renderCollectionChart(data.collection_status); 
             renderDeliveryChart(data.delivery_stats);
             renderSupplierChart(data.supplier_costs);
             renderCompanyChart(data.company_sales);
@@ -526,7 +597,6 @@
         } catch (err) { console.error("Sales data error:", err); }
     }
 
-    // --- CHART FUNCTIONS ---
     function renderDailyChart(data) {
         const ctx = document.getElementById('dailyChart').getContext('2d');
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
@@ -540,58 +610,25 @@
                 labels: data.map(d => d.label),
                 datasets: [
                     { 
-                        type: 'line', 
-                        label: 'Profit Margin', 
-                        data: data.map(d => d.margin), 
-                        yAxisID: 'y1',
-                        borderColor: colors.warning, 
-                        backgroundColor: colors.warning,
-                        borderWidth: 2, 
-                        borderDash: [5, 3],
-                        pointRadius: 3,
-                        order: 0 
+                        type: 'line', label: 'Profit Margin', data: data.map(d => d.margin), 
+                        yAxisID: 'y1', borderColor: colors.warning, backgroundColor: colors.warning,
+                        borderWidth: 2, borderDash: [5, 3], pointRadius: 3, order: 0 
                     },
                     { 
-                        type: 'line', 
-                        label: 'Sales Trend', 
-                        data: data.map(d => d.sales), 
-                        yAxisID: 'y',
-                        borderColor: '#4338ca', 
-                        borderWidth: 2,
-                        tension: 0.3, 
-                        pointRadius: 0,
-                        order: 1 
+                        type: 'line', label: 'Sales Trend', data: data.map(d => d.sales), 
+                        yAxisID: 'y', borderColor: '#4338ca', borderWidth: 2, tension: 0.3, pointRadius: 0, order: 1 
                     },
                     { 
-                        type: 'line', 
-                        label: 'Max Target', 
-                        data: Array(data.length).fill(maxTarget), 
-                        yAxisID: 'y',
-                        borderColor: colors.success, 
-                        borderWidth: 2, 
-                        borderDash: [6, 4], 
-                        pointRadius: 0, 
-                        order: 2 
+                        type: 'line', label: 'Max Target', data: Array(data.length).fill(maxTarget), 
+                        yAxisID: 'y', borderColor: colors.success, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, order: 2 
                     },
                     { 
-                        type: 'line', 
-                        label: 'Min Target', 
-                        data: Array(data.length).fill(minTarget), 
-                        yAxisID: 'y',
-                        borderColor: colors.danger, 
-                        borderWidth: 2, 
-                        borderDash: [2, 2], 
-                        pointRadius: 0, 
-                        order: 3 
+                        type: 'line', label: 'Min Target', data: Array(data.length).fill(minTarget), 
+                        yAxisID: 'y', borderColor: colors.danger, borderWidth: 2, borderDash: [2, 2], pointRadius: 0, order: 3 
                     },
                     { 
-                        type: 'bar', 
-                        label: 'Revenue', 
-                        data: data.map(d => d.sales), 
-                        yAxisID: 'y',
-                        backgroundColor: colors.primarySoft, 
-                        borderRadius: 4, 
-                        order: 4
+                        type: 'bar', label: 'Revenue', data: data.map(d => d.sales), 
+                        yAxisID: 'y', backgroundColor: colors.primarySoft, borderRadius: 4, order: 4
                     }
                 ]
             },
@@ -599,25 +636,9 @@
                 responsive: true, maintainAspectRatio: false,
                 plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 15 } } },
                 scales: { 
-                    y: { 
-                        beginAtZero: true, 
-                        position: 'left',
-                        grid: { borderDash: [4, 4], color: '#e2e8f0' },
-                        ticks: { callback: function(val) { return formatMoney(val); }, color: '#64748b' },
-                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 11 }, color: '#475569' }
-                    },
-                    y1: {
-                        beginAtZero: true,
-                        position: 'right',
-                        grid: { display: false },
-                        ticks: { callback: function(val) { return val + '%'; }, color: '#64748b' },
-                        title: { display: true, text: 'Margin (%)', font: { weight: 'bold', size: 11 }, color: '#475569' }
-                    },
-                    x: { 
-                        grid: { display: false },
-                        ticks: { color: '#64748b' },
-                        title: { display: true, text: 'Timeline', font: { weight: 'bold', size: 11 }, color: '#475569' }
-                    } 
+                    y: { beginAtZero: true, position: 'left', grid: { borderDash: [4, 4], color: '#e2e8f0' }, ticks: { callback: function(val) { return formatMoney(val); }, color: '#64748b' }, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 11 }, color: '#475569' } },
+                    y1: { beginAtZero: true, position: 'right', grid: { display: false }, ticks: { callback: function(val) { return val + '%'; }, color: '#64748b' }, title: { display: true, text: 'Margin (%)', font: { weight: 'bold', size: 11 }, color: '#475569' } },
+                    x: { grid: { display: false }, ticks: { color: '#64748b', maxRotation: 45, minRotation: 0 }, title: { display: true, text: 'Timeline', font: { weight: 'bold', size: 11 }, color: '#475569' } } 
                 }
             }
         });
@@ -626,259 +647,60 @@
     function renderDeliveryChart(data) {
         const ctx = document.getElementById('deliveryChart').getContext('2d');
         if (charts.delivery) charts.delivery.destroy();
-
-        charts.delivery = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['Delivered', 'Pending'],
-                datasets: [{
-                    data: [data.delivered, data.pending],
-                    backgroundColor: [colors.success, colors.warning],
-                    borderWidth: 0
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: { 
-                    legend: { position: 'right', labels: { boxWidth: 12, usePointStyle: true } }
-                }
-            }
-        });
+        charts.delivery = new Chart(ctx, { type: 'doughnut', data: { labels: ['Delivered', 'Pending'], datasets: [{ data: [data.delivered, data.pending], backgroundColor: [colors.success, colors.warning], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'right', labels: { boxWidth: 12, usePointStyle: true } } } } });
     }
 
-   // --- UPDATED: Horizontal Bar Chart for Account Managers ---
+    function renderCollectionChart(data) {
+        const ctx = document.getElementById('collectionChart').getContext('2d');
+        if (charts.collection) charts.collection.destroy();
+        if (!data || data.length === 0) return;
+        const labels = data.map(d => d.status);
+        const values = data.map(d => d.sales);
+        const bgColors = labels.map(l => l === 'Paid' ? colors.success : colors.danger);
+        charts.collection = new Chart(ctx, { type: 'doughnut', data: { labels: labels, datasets: [{ data: values, backgroundColor: bgColors, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } }, tooltip: { callbacks: { label: function(context) { return ' ' + context.label + ': ' + formatMoney(context.raw); } } } } } });
+    }
+
     function renderManagerChart(data) {
         const ctx = document.getElementById('managerChart').getContext('2d');
         if (charts.manager) charts.manager.destroy();
-
-        charts.manager = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.employee),
-                datasets: [{
-                    label: 'Sales Revenue',
-                    data: data.map(d => d.sales),
-                    backgroundColor: data.map(d => getEmpColor(d.employee)),
-                    borderRadius: 4,
-                    barPercentage: 0.7
-                }]
-            },
-            options: {
-                indexAxis: 'y', 
-                responsive: true, 
-                maintainAspectRatio: false,
-                plugins: { 
-                    legend: { display: false }, 
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                // Restored: formatLarge puts the peso sign and decimals back
-                                const salesStr = formatLarge(context.raw);
-                                const compCount = data[context.dataIndex].company_count;
-                                return ` ${salesStr} (${compCount} Companies)`;
-                            }
-                        }
-                    },
-                    datalabels: {
-                        color: '#475569',
-                        anchor: 'end',
-                        align: 'end',
-                        offset: 4,
-                        // Restored: formatLarge puts the peso sign and decimals back
-                        formatter: (val) => formatLarge(val),
-                        font: { weight: 'bold', size: 11 }
-                    }
-                },
-                scales: {
-                    x: {
-                        display: false, 
-                        beginAtZero: true,
-                        grace: '35%' 
-                    },
-                    y: {
-                        grid: { display: false },
-                        ticks: { font: { weight: 'bold', size: 11 }, color: '#334155' }
-                    }
-                },
-                onClick: (e, elements) => {
-                    if (elements.length > 0) {
-                        const idx = elements[0].index;
-                        const label = charts.manager.data.labels[idx];
-                        toggleDrill('manager', label); 
-                    }
-                },
-                onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
-            },
-            plugins: [ChartDataLabels] 
-        });
+        charts.manager = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => d.employee), datasets: [{ label: 'Sales Revenue', data: data.map(d => d.sales), backgroundColor: data.map(d => getEmpColor(d.employee)), borderRadius: 4, barPercentage: 0.7 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return ` ${formatLarge(context.raw)} (${data[context.dataIndex].company_count} Companies)`; } } }, datalabels: { color: '#475569', anchor: 'end', align: 'end', offset: 4, formatter: (val) => formatLarge(val), font: { weight: 'bold', size: 11 } } }, scales: { x: { display: false, beginAtZero: true, grace: '35%' }, y: { grid: { display: false }, ticks: { font: { weight: 'bold', size: 11 }, color: '#334155' } } }, onClick: (e, elements) => { if (elements.length > 0) toggleDrill('manager', charts.manager.data.labels[elements[0].index]); }, onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; } }, plugins: [ChartDataLabels] });
     }
     
     function renderCategoryChart(data) {
         const ctx = document.getElementById('categoryChart').getContext('2d');
         if (charts.category) charts.category.destroy();
-
-        charts.category = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: data.map(c => c.category),
-                datasets: [{ data: data.map(c => c.total_sales), backgroundColor: colors.palette, borderWidth: 0 }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: true, position: 'right', labels: { boxWidth: 12, usePointStyle: true } } },
-                onClick: (e, elements) => {
-                    if (elements.length > 0) {
-                        const idx = elements[0].index;
-                        const label = charts.category.data.labels[idx];
-                        toggleDrill('category', label);
-                    }
-                },
-                onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
-            }
-        });
+        charts.category = new Chart(ctx, { type: 'doughnut', data: { labels: data.map(c => c.category), datasets: [{ data: data.map(c => c.total_sales), backgroundColor: colors.palette, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } } }, onClick: (e, elements) => { if (elements.length > 0) toggleDrill('category', charts.category.data.labels[elements[0].index]); }, onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; } } });
     }
 
     function renderSupplierChart(data) {
         const ctx = document.getElementById('supplierChart').getContext('2d');
         if (charts.supplier) charts.supplier.destroy();
-
-        charts.supplier = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.supplier),
-                datasets: [{ label: 'Total Cost', data: data.map(d => d.cost), backgroundColor: colors.danger, borderRadius: 4 }]
-            },
-            options: {
-                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } }
-            }
-        });
+        charts.supplier = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => d.supplier), datasets: [{ label: 'Total Cost', data: data.map(d => d.cost), backgroundColor: colors.danger, borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 11 } } } } } });
     }
 
     function renderCompanyChart(data) {
         const container = document.getElementById('companyChartContainer');
         const minWidth = Math.max(800, data.length * 60);
-        container.style.width = minWidth + 'px';
-        container.style.height = '400px';
+        container.style.width = minWidth + 'px'; container.style.height = '400px';
 
         const ctx = document.getElementById('companyChart').getContext('2d');
         const backgroundColors = data.map(d => getEmpColor(d.employee));
-        
         const minTarget = parseFloat(document.getElementById('minTarget').value) || 100000;
         const maxTarget = parseFloat(document.getElementById('maxTarget').value) || 200000;
 
         if (charts.company) charts.company.destroy();
-        charts.company = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.company.split(' ')[0]),
-                datasets: [
-                    {
-                        type: 'line', label: 'Max Target',
-                        data: Array(data.length).fill(maxTarget),
-                        borderColor: colors.success, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, datalabels: { display: false }, order: 0
-                    },
-                    {
-                        type: 'line', label: 'Min Target',
-                        data: Array(data.length).fill(minTarget),
-                        borderColor: colors.danger, borderWidth: 2, borderDash: [2, 2], pointRadius: 0, datalabels: { display: false }, order: 1
-                    },
-                    {
-                        type: 'bar',
-                        label: 'Total Sales',
-                        data: data.map(d => d.total_sales),
-                        backgroundColor: backgroundColors,
-                        borderRadius: 3,
-                        barPercentage: 0.6,
-                        order: 2
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { 
-                        display: true, position: 'bottom', 
-                        labels: { 
-                            usePointStyle: true, boxWidth: 8, padding: 15,
-                            filter: function(item, chart) { return item.text !== 'Total Sales'; }
-                        } 
-                    },
-                    tooltip: {
-                        callbacks: {
-                            title: function(context) {
-                                if (context[0].datasetIndex === 2) {
-                                    return data[context[0].dataIndex].company;
-                                }
-                                return context[0].label;
-                            },
-                            label: function(context) {
-                                // NEW: Formats tooltip as a whole number without the peso sign
-                                return ' ' + context.dataset.label + ': ' + Math.round(context.raw).toLocaleString('en-US');
-                            },
-                            afterLabel: function(context) {
-                                if (context.datasetIndex === 2) {
-                                    return 'Account Manager: ' + data[context.dataIndex].employee;
-                                }
-                                return '';
-                            }
-                        }
-                    },
-                    datalabels: {
-                        color: '#444', anchor: 'end', align: 'end', offset: -5,
-                        // NEW: Formats datalabels above bars as whole numbers
-                        formatter: (val) => Math.round(val).toLocaleString('en-US'),
-                        font: { weight: 'bold', size: 10 }
-                    }
-                },
-                scales: {
-                    x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } },
-                    y: { 
-                        display: true, 
-                        title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, 
-                        beginAtZero: true, 
-                        // NEW: Formats the Y-axis numbers as whole numbers without peso sign
-                        ticks: { callback: function(value) { return Math.round(value).toLocaleString('en-US'); } } 
-                    }
-                },
-                onClick: (e, elements) => {
-                    if (elements.length > 0) {
-                        const idx = elements[0].index;
-                        const fullCompanyName = data[idx].company;
-                        toggleDrill('company', fullCompanyName);
-                    }
-                },
-                onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; }
-            },
-            plugins: [ChartDataLabels]
-        });
+        charts.company = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => d.company.split(' ')[0]), datasets: [ { type: 'line', label: 'Max Target', data: Array(data.length).fill(maxTarget), borderColor: colors.success, borderWidth: 2, borderDash: [6, 4], pointRadius: 0, datalabels: { display: false }, order: 0 }, { type: 'line', label: 'Min Target', data: Array(data.length).fill(minTarget), borderColor: colors.danger, borderWidth: 2, borderDash: [2, 2], pointRadius: 0, datalabels: { display: false }, order: 1 }, { type: 'bar', label: 'Total Sales', data: data.map(d => d.total_sales), backgroundColor: backgroundColors, borderRadius: 3, barPercentage: 0.6, order: 2 } ] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 15, filter: function(item) { return item.text !== 'Total Sales'; } } }, tooltip: { callbacks: { title: function(context) { return context[0].datasetIndex === 2 ? data[context[0].dataIndex].company : context[0].label; }, label: function(context) { return ' ' + context.dataset.label + ': ' + Math.round(context.raw).toLocaleString('en-US'); }, afterLabel: function(context) { return context.datasetIndex === 2 ? 'Account Manager: ' + data[context.dataIndex].employee : ''; } } }, datalabels: { color: '#444', anchor: 'end', align: 'end', offset: -5, formatter: (val) => Math.round(val).toLocaleString('en-US'), font: { weight: 'bold', size: 10 } } }, scales: { x: { display: true, title: { display: true, text: 'Company', font: { weight: 'bold', size: 10 } }, ticks: { maxRotation: 45, minRotation: 0, font: { size: 11 } } }, y: { display: true, title: { display: true, text: 'Revenue (PHP)', font: { weight: 'bold', size: 10 } }, beginAtZero: true, ticks: { callback: function(value) { return Math.round(value).toLocaleString('en-US'); } } } }, onClick: (e, elements) => { if (elements.length > 0) toggleDrill('company', data[elements[0].index].company); }, onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; } }, plugins: [ChartDataLabels] });
     }
 
     function renderTopProducts(data) {
         const ctx = document.getElementById('topProductsChart').getContext('2d');
         if (charts.topProd) charts.topProd.destroy();
-        
-        charts.topProd = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: data.map(d => d.name.substring(0, 15) + (d.name.length>15 ? '...' : '')),
-                datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.info, borderRadius: 4 }]
-            },
-            options: {
-                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: { x: { display: false }, y: { grid: { display: false } } }
-            }
-        });
+        charts.topProd = new Chart(ctx, { type: 'bar', data: { labels: data.map(d => d.name.substring(0, 15) + (d.name.length>15 ? '...' : '')), datasets: [{ label: 'Revenue', data: data.map(d => d.sales), backgroundColor: colors.info, borderRadius: 4 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { display: false } } } } });
     }
 
     function renderMatrix(data) {
         const tbody = document.getElementById('matrixBody');
         tbody.innerHTML = '';
-
         data.forEach((cat, index) => {
             const rowId = `cat-${index}`;
             const parentHtml = `
@@ -890,15 +712,7 @@
                 </tr>
             `;
             let childrenHtml = `<tr id="${rowId}" style="display:none;"><td colspan="4"><div class="nested-container bg-light p-2 rounded"><table class="table table-sm table-borderless mb-0">`;
-            cat.items.forEach(item => {
-                childrenHtml += `
-                    <tr>
-                        <td width="40%" class="ps-4 text-muted small">${item.name}</td>
-                        <td width="20%" class="text-end small">${item.qty}</td>
-                        <td width="20%" class="text-end small">${formatMoney(item.sales)}</td>
-                        <td width="20%" class="text-end small">${formatMoney(item.profit)}</td>
-                    </tr>`;
-            });
+            cat.items.forEach(item => { childrenHtml += `<tr><td width="40%" class="ps-4 text-muted small">${item.name}</td><td width="20%" class="text-end small">${item.qty}</td><td width="20%" class="text-end small">${formatMoney(item.sales)}</td><td width="20%" class="text-end small">${formatMoney(item.profit)}</td></tr>`; });
             childrenHtml += `</table></div></td></tr>`;
             tbody.insertAdjacentHTML('beforeend', parentHtml + childrenHtml);
         });
@@ -908,22 +722,13 @@
         const row = document.getElementById(id);
         const icon = el.querySelector('.toggle-icon');
         if (row.style.display === 'none') {
-            row.style.display = 'table-row';
-            icon.classList.remove('fa-chevron-right');
-            icon.classList.add('fa-chevron-down');
-            el.classList.add('bg-light');
+            row.style.display = 'table-row'; icon.classList.remove('fa-chevron-right'); icon.classList.add('fa-chevron-down'); el.classList.add('bg-light');
         } else {
-            row.style.display = 'none';
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-right');
-            el.classList.remove('bg-light');
+            row.style.display = 'none'; icon.classList.remove('fa-chevron-down'); icon.classList.add('fa-chevron-right'); el.classList.remove('bg-light');
         }
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        handlePeriodChange();
-        updateDashboard(); 
-    });
+    document.addEventListener('DOMContentLoaded', () => { handlePeriodChange(); updateDashboard(); });
     </script>
 </body>
 </html>
