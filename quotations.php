@@ -10,6 +10,24 @@ if($checkDraft && $checkDraft->num_rows == 0) {
     $conn->query("ALTER TABLE products ADD COLUMN is_draft TINYINT(1) DEFAULT 0");
 }
 
+// --- FETCH STATS FOR DASHBOARD CARDS ---
+$stats = $conn->query("SELECT status, COUNT(*) as cnt, SUM(total_amount) as val FROM quotations GROUP BY status");
+$statData = [
+    'Pending' => ['cnt' => 0, 'val' => 0],
+    'Approved' => ['cnt' => 0, 'val' => 0],
+    'Reserved' => ['cnt' => 0, 'val' => 0],
+    'Converted' => ['cnt' => 0, 'val' => 0]
+];
+if ($stats) {
+    while ($r = $stats->fetch_assoc()) {
+        $status = $r['status'] ? $r['status'] : 'Pending';
+        if (isset($statData[$status])) {
+            $statData[$status]['cnt'] = $r['cnt'];
+            $statData[$status]['val'] = $r['val'];
+        }
+    }
+}
+
 // --- AUTO-GENERATE NEXT REFERENCE NUMBER (YYYY-XXX) ---
 function getNextQuoteRef($conn) {
     $yr = date('Y');
@@ -33,7 +51,6 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
         $status = isset($input['status']) ? $input['status'] : 'Pending'; 
         $stmt = $conn->prepare("INSERT INTO quotations (date, quote_ref, company, category, item, quantity_requested, suppliers_price, nam_unit_price, total_amount, po_number, payment_term, remarks, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         
-        // Prepare to check inventory
         $checkProd = $conn->prepare("SELECT id FROM products WHERE name = ?");
         $insertProd = $conn->prepare("INSERT INTO products (name, category_code, supplier_price, nam_price, margin, current_stock, is_draft) VALUES (?, ?, ?, ?, ?, 0, 1)");
 
@@ -44,7 +61,6 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
             $total = $item['quantity'] * $item['n_price'];
             $cat = !empty($item['category']) ? $item['category'] : 'Uncategorized';
             
-            // Insert into Quotations
             $stmt->bind_param("sssssidddssss", 
                 $header['date'], $header['quote_ref'], $header['company'], 
                 $cat, $item['item'], $item['quantity'], 
@@ -54,11 +70,9 @@ if ($input && isset($input['action']) && $input['action'] == 'create_quote_batch
             );
             $stmt->execute();
 
-            // --- THE NEW LOGIC: Check if product exists, if not, save as Draft ---
             $checkProd->bind_param("s", $item['item']);
             $checkProd->execute();
             if ($checkProd->get_result()->num_rows === 0) {
-                // Product doesn't exist, calculate margin and insert as Draft
                 $marginVal = ($item['n_price'] > 0) ? (($item['n_price'] - $item['s_price']) / $item['n_price']) * 100 : 0;
                 $marginStr = number_format($marginVal, 2) . '%';
                 $insertProd->bind_param("ssdds", $item['item'], $cat, $item['s_price'], $item['n_price'], $marginStr);
@@ -84,7 +98,6 @@ if (isset($_POST['approve_id'])) {
     $q = $conn->query("SELECT * FROM quotations WHERE id = $q_id")->fetch_assoc();
     
     if ($q && $q['status'] != 'Approved' && $q['status'] != 'Converted') {
-        // Check Stock First
         $check = $conn->prepare("SELECT current_stock FROM products WHERE name = ?");
         $check->bind_param("s", $q['item']);
         $check->execute();
@@ -93,14 +106,11 @@ if (isset($_POST['approve_id'])) {
         if ($stock && $stock['current_stock'] >= $q['quantity_requested']) {
             $conn->begin_transaction();
             try {
-                // Deduct Stock
                 $upd = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
                 $upd->bind_param("is", $q['quantity_requested'], $q['item']);
                 $upd->execute();
                 
-                // Update Status
                 $conn->query("UPDATE quotations SET status = 'Approved' WHERE id = $q_id");
-
                 logAction('Approved Quotation', "Approved quote for {$q['company']} (Item: {$q['item']}) and deducted stock.");
                 $conn->commit();
                 $msg = "approved";
@@ -118,16 +128,35 @@ if (isset($_POST['approve_id'])) {
     exit;
 }
 
-// --- 2. DELETE QUOTE ITEM (AND RESTORE STOCK IF APPROVED) ---
+// --- 8. MERGE DUPLICATE COMPANIES ---
+if (isset($_POST['action']) && $_POST['action'] == 'merge_companies') {
+    $conn = getDBConnection();
+    $target = $conn->real_escape_string($_POST['target_company']);
+    $duplicates = json_decode($_POST['duplicates'], true);
+    
+    if (!empty($target) && !empty($duplicates)) {
+        foreach ($duplicates as $dup) {
+            if ($dup !== $target) {
+                $dupEsc = $conn->real_escape_string($dup);
+                // Update both tables to fix history entirely
+                $conn->query("UPDATE quotations SET company = '$target' WHERE company = '$dupEsc'");
+                $conn->query("UPDATE sales SET company = '$target' WHERE company = '$dupEsc'");
+            }
+        }
+        logAction('Merged Companies', "Merged multiple duplicate client entries into '$target'");
+    }
+    header("Location: quotations.php?msg=merged");
+    exit;
+}
+
+// --- 2. DELETE QUOTE ITEM ---
 if (isset($_POST['delete_id'])) {
     $d_id = intval($_POST['delete_id']);
     $conn = getDBConnection();
     
     $q = $conn->query("SELECT * FROM quotations WHERE id = $d_id")->fetch_assoc();
     if ($q) {
-        // Only allow deleting if not converted yet to maintain data integrity
         if ($q['status'] != 'Converted') {
-            // If it was already approved, return the stock to inventory before deleting
             if ($q['status'] == 'Approved') {
                 $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
             }
@@ -143,61 +172,42 @@ if (isset($_POST['delete_id'])) {
 if (isset($_POST['convert_id'])) {
     $q_id = intval($_POST['convert_id']);
     $conn = getDBConnection();
-    
     $q = $conn->query("SELECT * FROM quotations WHERE id = $q_id")->fetch_assoc();
     
     if ($q) {
-        // --- START TRANSACTION ---
         $conn->begin_transaction();
-        
         try {
-            // 1. Insert into Sales
             $income = ($q['nam_unit_price'] * $q['quantity_requested']) - ($q['suppliers_price'] * $q['quantity_requested']);
             $percent = ($q['nam_unit_price'] > 0) ? ($income / ($q['nam_unit_price'] * $q['quantity_requested'])) * 100 : 0;
             
             $stmt = $conn->prepare("INSERT INTO sales (date, company, category, item, quantity_requested, suppliers_price, total_actual_amount, nam_unit_price, total_nam_amount, income, income_percent, po_number, payment_term, remarks, date_delivered, due_date) VALUES (CURRENT_DATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)");
-            
             $total_actual = $q['suppliers_price'] * $q['quantity_requested'];
             $total_nam = $q['nam_unit_price'] * $q['quantity_requested'];
             
             $stmt->bind_param("sssidddddssss", $q['company'], $q['category'], $q['item'], $q['quantity_requested'], $q['suppliers_price'], $total_actual, $q['nam_unit_price'], $total_nam, $income, $percent, $q['po_number'], $q['payment_term'], $q['remarks']);
             
-            if (!$stmt->execute()) {
-                throw new Exception("Failed to insert sale record.");
-            }
+            if (!$stmt->execute()) throw new Exception("Failed to insert sale record.");
             
-            // 2. Deduct Stock ONLY if it wasn't already deducted via 'Approve'
             if ($q['status'] != 'Approved') {
                 $check = $conn->prepare("SELECT current_stock FROM products WHERE name = ?");
                 $check->bind_param("s", $q['item']);
                 $check->execute();
                 $stock = $check->get_result()->fetch_assoc();
                 
-                if (!$stock || $stock['current_stock'] < $q['quantity_requested']) {
-                    throw new Exception("Insufficient Stock");
-                }
+                if (!$stock || $stock['current_stock'] < $q['quantity_requested']) throw new Exception("Insufficient Stock");
 
                 $updateStock = $conn->prepare("UPDATE products SET current_stock = current_stock - ? WHERE name = ?");
                 $updateStock->bind_param("is", $q['quantity_requested'], $q['item']);
-                if (!$updateStock->execute()) {
-                    throw new Exception("Failed to deduct inventory.");
-                }
+                if (!$updateStock->execute()) throw new Exception("Failed to deduct inventory.");
             }
 
-            // 3. Mark Quote as Converted
             $conn->query("UPDATE quotations SET status = 'Converted' WHERE id = $q_id");
-
-            // COMMIT IF ALL SUCCEEDED
             $conn->commit();
-            
             logAction('Converted Quotation', "Converted quote for {$q['company']} to a sale (Item: {$q['item']})");
-            
             $msg = "success";
             
         } catch (Exception $e) {
-            // ROLLBACK IF ANYTHING FAILED
             $conn->rollback();
-            error_log($e->getMessage());
             $msg = ($e->getMessage() == "Insufficient Stock") ? "error_stock" : "error_db";
         }
     }
@@ -224,15 +234,17 @@ if (isset($_POST['toggle_reserve_id'])) {
 if (isset($_POST['action']) && $_POST['action'] == 'edit_quote') {
     $conn = getDBConnection();
     $id = intval($_POST['edit_id']);
+    $item = $_POST['edit_item']; // Added item variable
     $qty = intval($_POST['edit_quantity']);
     $s_price = floatval($_POST['edit_s_price']);
     $n_price = floatval($_POST['edit_n_price']);
     $total = $qty * $n_price;
     
-    $stmt = $conn->prepare("UPDATE quotations SET quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
-    $stmt->bind_param("idddi", $qty, $s_price, $n_price, $total, $id);
+    // Updated query to include 'item=?'
+    $stmt = $conn->prepare("UPDATE quotations SET item=?, quantity_requested=?, suppliers_price=?, nam_unit_price=?, total_amount=? WHERE id=?");
+    $stmt->bind_param("sidddi", $item, $qty, $s_price, $n_price, $total, $id);
     $stmt->execute();
-    logAction('Edited Quotation', "Updated quote ID $id details (New Qty: $qty).");
+    logAction('Edited Quotation', "Updated quote ID $id details (New Item: $item, Qty: $qty).");
     header("Location: quotations.php?msg=edited");
     exit;
 }
@@ -242,16 +254,13 @@ if (isset($_POST['delete_quote_ref'])) {
     $d_ref = $_POST['delete_quote_ref'];
     $conn = getDBConnection();
     
-    // Restore stock for approved items in this quote before deleting
     $res = $conn->query("SELECT item, quantity_requested, status FROM quotations WHERE quote_ref = '$d_ref' AND status = 'Approved'");
     while($q = $res->fetch_assoc()) {
         $conn->query("UPDATE products SET current_stock = current_stock + {$q['quantity_requested']} WHERE name = '{$conn->real_escape_string($q['item'])}'");
     }
     
-    // Delete items (excluding Converted ones to keep sales history safe)
     $conn->query("DELETE FROM quotations WHERE quote_ref = '$d_ref' AND status != 'Converted'");
     logAction('Deleted Quotation Group', "Deleted entire quote group Ref: $d_ref");
-    
     header("Location: quotations.php?msg=deleted");
     exit;
 }
@@ -273,73 +282,47 @@ if (isset($_POST['action']) && $_POST['action'] == 'edit_quote_group') {
 $conn = getDBConnection();
 $next_ref_default = getNextQuoteRef($conn);
 
-// --- PRE-FILL COMPANY DATA WITH CSV ADDRESSES ---
+// --- UNIFIED CLIENT DATA FETCHING ---
 $clientData = [];
-
-// 1. Fetch Addresses from CSV
-$csvFiles = ['CLIENT-TIN - Sheet1.csv', 'database/CLIENT-TIN.csv'];
-$csvMatched = false;
-foreach ($csvFiles as $csvFile) {
-    if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
-        $header = fgetcsv($handle, 1000, ","); // Skip header row
-        while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
-            if (isset($data[0]) && trim($data[0]) !== '') {
-                $comp = trim($data[0]);
-                $addr = isset($data[1]) ? trim($data[1]) : '';
-                $clientData[$comp] = [
-                    'po' => '',
-                    'term' => '',
-                    'remarks' => '',
-                    'address' => $addr
-                ];
-            }
+$resSales = $conn->query("SELECT company, address, payment_term, contact_person_contact FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
+if ($resSales) {
+    while($row = $resSales->fetch_assoc()) {
+        $comp = trim($row['company']);
+        if (!isset($clientData[$comp])) {
+            $clientData[$comp] = ['address' => trim($row['address'] ?? ''), 'term' => trim($row['payment_term'] ?? ''), 'po' => '', 'remarks' => ''];
         }
-        fclose($handle);
-        $csvMatched = true;
-        break; // Stop if we found and processed one of the CSV files
     }
 }
-
-// 2. Merge existing data from Quotations table
 $resQuotes = $conn->query("SELECT company, po_number, payment_term, remarks FROM quotations WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
 if ($resQuotes) {
     while($row = $resQuotes->fetch_assoc()) {
         $comp = trim($row['company']);
         if (!isset($clientData[$comp])) {
-            $clientData[$comp] = [
-                'po' => trim($row['po_number'] ?? ''),
-                'term' => trim($row['payment_term'] ?? ''),
-                'remarks' => trim($row['remarks'] ?? ''),
-                'address' => ''
-            ];
+            $clientData[$comp] = ['address' => '', 'term' => trim($row['payment_term'] ?? ''), 'po' => trim($row['po_number'] ?? ''), 'remarks' => trim($row['remarks'] ?? '')];
         } else {
             if (empty($clientData[$comp]['po'])) $clientData[$comp]['po'] = trim($row['po_number'] ?? '');
             if (empty($clientData[$comp]['term'])) $clientData[$comp]['term'] = trim($row['payment_term'] ?? '');
-            if (empty($clientData[$comp]['remarks'])) $clientData[$comp]['remarks'] = trim($row['remarks'] ?? '');
         }
     }
 }
-
-// 3. Merge existing data from Sales table
-$resSales = $conn->query("SELECT company, payment_term FROM sales WHERE company IS NOT NULL AND company != '' ORDER BY date DESC, id DESC");
-if ($resSales) {
-    while($row = $resSales->fetch_assoc()) {
-        $comp = trim($row['company']);
-        if (!isset($clientData[$comp])) {
-            $clientData[$comp] = [
-                'po' => '',
-                'term' => trim($row['payment_term'] ?? ''),
-                'remarks' => '',
-                'address' => ''
-            ];
-        } else {
-            if (empty($clientData[$comp]['term'])) $clientData[$comp]['term'] = trim($row['payment_term'] ?? '');
+$csvFile = 'CLIENT-TIN - Sheet1.csv'; 
+if (file_exists($csvFile) && ($handle = fopen($csvFile, "r")) !== FALSE) {
+    fgetcsv($handle); 
+    while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+        $compName = trim($data[0] ?? '');
+        $address  = trim($data[1] ?? '');
+        if (!empty($compName)) {
+            if (!isset($clientData[$compName])) {
+                $clientData[$compName] = ['address' => $address, 'term' => '', 'po' => '', 'remarks' => ''];
+            } else if (empty($clientData[$compName]['address'])) {
+                $clientData[$compName]['address'] = $address;
+            }
         }
     }
+    fclose($handle);
 }
-ksort($clientData); 
+ksort($clientData);
 
-// --- FETCH RESERVED QUANTITIES PER ITEM ---
 $reservedData = [];
 $resReserved = $conn->query("SELECT item, SUM(quantity_requested) as total_reserved FROM quotations WHERE status = 'Reserved' GROUP BY item");
 if ($resReserved) {
@@ -356,29 +339,30 @@ if ($resReserved) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-
-        /* Custom Scrollbar for Accordion */
-#quotesAccordion::-webkit-scrollbar { width: 6px; }
-#quotesAccordion::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-#quotesAccordion::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
-#quotesAccordion::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
-
-        .accordion-button:not(.collapsed) { background-color: #e0e7ff; color: #4338ca; font-weight: bold; }
+        body { background-color: #f4f6f9; }
+        
+        /* Dashboard Stat Cards */
+        .stat-card { transition: transform 0.2s, box-shadow 0.2s; border-radius: 12px; border: none; }
+        .stat-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important; }
+        .stat-icon { font-size: 2.5rem; opacity: 0.2; position: absolute; right: 20px; top: 20px; }
+        
+        /* Custom Accordion / Table Styling */
+        .accordion-button:not(.collapsed) { background-color: #f8f9fa; color: #212529; box-shadow: inset 0 -1px 0 rgba(0,0,0,.125); }
+        .company-group { border-radius: 10px !important; margin-bottom: 15px; border: 1px solid #e0e0e0; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+        .table > :not(caption) > * > * { padding: 0.75rem 1rem; }
+        
+        /* Modal Form UI */
+        .form-section-header { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee; }
         .total-display { font-size: 1.1rem; font-weight: bold; color: #0d6efd; background: #e9ecef; }
         
-        /* Interactive inputs for formal print document */
+        /* Interactive Print Inputs */
         .print-input { border: none; border-bottom: 1px dashed #aaa; background: transparent; padding: 2px 5px; outline: none; transition: border 0.3s; }
         .print-input:focus { border-bottom: 1px solid #0d6efd; }
         .preview-box { border: 1px solid #dee2e6; background: #fff; padding: 0; box-shadow: 0 0 15px rgba(0,0,0,0.05); }
-
-        /* Highlight editable inline inputs in preview */
         .inline-edit { color: #0d6efd; cursor: pointer; }
         .inline-edit:focus { color: #000; background-color: #f8f9fa; border-bottom: 1px solid #0d6efd !important; }
-
-        /* Magic Placeholder for ContentEditable Divs */
         [contenteditable]:empty:before { content: attr(placeholder); color: #adb5bd; pointer-events: none; display: block; font-style: italic; }
 
-        /* ULTRA COMPACT PRINT STYLES */
         @media print {
             body > :not(#printContainer) { display: none !important; }
             #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
@@ -386,408 +370,465 @@ if ($resReserved) {
             .inline-edit { color: #000 !important; } 
             .print-input::-webkit-input-placeholder { color: transparent; }
             [contenteditable]:empty:before { display: none !important; }
-            
-            input[type=number]::-webkit-inner-spin-button, 
-            input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-            
-            /* Squeeze the margins to fit more vertically */
+            input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
             @page { size: A4 portrait; margin: 5mm; }
-
-            /* Force all text to be smaller and tighter */
             #printArea { font-size: 11px !important; line-height: 1.1 !important; }
             #printArea h3 { font-size: 16px !important; margin-bottom: 2px !important; }
             #printArea h1 { font-size: 24px !important; margin-bottom: 0px !important; }
-            
-            /* Strip unnecessary padding and margins */
             #printArea .mb-4 { margin-bottom: 8px !important; }
-            #printArea .mb-5 { margin-bottom: 12px !important; }
-            #printArea .mt-5 { margin-top: 15px !important; }
-            #printArea .py-2 { padding-top: 2px !important; padding-bottom: 2px !important; }
-            #printArea .pb-1 { padding-bottom: 0px !important; }
-            #printArea hr { margin: 5px 0 !important; }
-            #printArea .table-sm th, #printArea .table-sm td { padding: 2px !important; }
-
-            /* Fixes for table getting cut off across pages */
             table { page-break-inside: auto; width: 100% !important; border-collapse: collapse; }
             tr { page-break-inside: avoid; page-break-after: auto; }
             thead { display: table-header-group; }
-            tfoot { display: table-row-group; } /* CHANGED TO PREVENT REPEATING ON EVERY PAGE */
-
-            /* Ensure grids stay intact and don't collapse */
-            .row { display: flex !important; flex-wrap: nowrap !important; margin-left: 0 !important; margin-right: 0 !important; }
-            .col-8 { width: 66.666667% !important; max-width: 66.666667% !important; padding:0 5px!important; }
-            .col-7 { width: 58.333333% !important; max-width: 58.333333% !important; padding:0 5px!important; }
-            .col-5 { width: 41.666667% !important; max-width: 41.666667% !important; padding:0 5px!important; }
-            .col-4 { width: 33.333333% !important; max-width: 33.333333% !important; padding:0 5px!important; }
+            tfoot { display: table-row-group; }
         }
-        
         .formal-text { font-family: "Times New Roman", Times, serif; }
         .formal-sans { font-family: Arial, Helvetica, sans-serif; }
-        
-        .form-section-header { 
-            font-size: 0.85rem; font-weight: 700; text-transform: uppercase; 
-            letter-spacing: 0.5px; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid #eee;
-        }
     </style>
 </head>
-<body class="bg-light">
+<body>
     <?php include 'navbar.php'; ?>
-    <div class="container-fluid mt-4 pb-5">
-        <div class="row g-4">
-            
-            <div class="col-lg-4">
-    <div class="sticky-top" style="top: 80px; z-index: 10;"> <div class="card shadow-sm border-0 h-100">
-                    <div class="card-header bg-primary text-white fw-bold"><i class="fas fa-file-invoice me-2"></i>New Quotation Encoder</div>
-                    <div class="card-body bg-light">
-                        <form id="quoteForm" onsubmit="event.preventDefault(); addToQuote();">
-                            <input type="hidden" id="categoryField">
-                            
-                            <div class="mb-4">
-                                <div class="form-section-header text-primary border-primary">1. Quotation Details</div>
-                                <div class="row g-2">
-                                    <div class="col-6">
-                                        <label class="small text-muted fw-bold">Date</label>
-                                        <input type="date" id="date" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>" required>
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="small text-muted fw-bold">Quote Reference</label>
-                                        <input type="text" id="quote_ref" class="form-control form-control-sm" value="<?= $next_ref_default ?>" required>
-                                    </div>
-                                    
-                                    <div class="col-12">
-                                        <label class="small text-muted fw-bold">Client Company</label>
-                                        <input type="text" id="company" class="form-control form-control-sm" placeholder="Search Client..." list="companyList" required autocomplete="off">
-                                        <datalist id="companyList">
-                                            <?php foreach(array_keys($clientData) as $comp): ?>
-                                                <option value="<?= htmlspecialchars($comp); ?>">
-                                            <?php endforeach; ?>
-                                        </datalist>
-                                    </div>
-                                    
-                                    <div class="col-12">
-                                        <label class="small text-muted fw-bold">Company Address</label>
-                                        <input type="text" id="address" class="form-control form-control-sm" placeholder="Address (For Formal Print)">
-                                    </div>
-
-                                    <div class="col-6">
-                                        <label class="small text-muted fw-bold">Client Inquiry Num</label>
-                                        <input type="text" id="po" class="form-control form-control-sm" placeholder="Inquiry #">
-                                    </div>
-                                    <div class="col-6">
-                                        <label class="small text-muted fw-bold">Payment Terms</label>
-                                        <input type="text" id="term" class="form-control form-control-sm" placeholder="e.g. 30 Days">
-                                    </div>
-                                    <div class="col-12">
-                                        <textarea id="remarks" class="form-control form-control-sm" placeholder="Remarks / Notes (Applies to entire quote)"></textarea>
-                                    </div>
-                                </div>
-                            </div>
-</div>
-
-                            <div>
-                                <div class="form-section-header text-success border-success">2. Add Item</div>
-                                <div class="row g-2">
-                                    <div class="col-12">
-                                        <label class="small text-muted fw-bold">Item Description</label>
-                                        <input type="text" id="itemInput" list="productList" class="form-control form-control-sm" placeholder="Search Item..." autocomplete="off">
-                                        <datalist id="productList"></datalist>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="small text-muted fw-bold">Quantity</label>
-                                        <input type="number" id="quantity" class="form-control form-control-sm" placeholder="Qty" value="1" min="1">
-                                        
-                                        <div id="stockTracker" class="mt-2 p-2 bg-white border rounded border-info-subtle" style="display: none; font-size: 0.75rem;">
-                                            <div class="d-flex justify-content-between mb-1">
-                                                <span class="text-muted">On-Hand Stock:</span>
-                                                <span class="fw-bold text-dark" id="infoStock">0</span>
-                                            </div>
-                                            <div class="d-flex justify-content-between mb-1">
-                                                <span class="text-danger">Currently Reserved:</span>
-                                                <span class="fw-bold text-danger" id="infoReserved">0</span>
-                                            </div>
-                                            <div class="d-flex justify-content-between mb-1 border-bottom pb-1">
-                                                <span class="text-success">True Available:</span>
-                                                <span class="fw-bold text-success" id="infoAvailable">0</span>
-                                            </div>
-                                            <div class="d-flex justify-content-between mt-1">
-                                                <span class="text-primary fw-bold">Left After This Quote:</span>
-                                                <span class="fw-bold text-primary" id="infoLeft">0</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="col-12 mt-3">
-                                        <div class="border rounded p-2 bg-white border-secondary-subtle">
-                                            <div class="row g-2">
-                                                <div class="col-6">
-                                                    <label class="small text-muted fw-bold">Supplier Cost</label>
-                                                    <input type="number" step="0.01" id="s_price" class="form-control form-control-sm" placeholder="Cost">
-                                                </div>
-                                                <div class="col-6">
-                                                    <label class="small text-primary fw-bold">Selling Price</label>
-                                                    <input type="number" step="0.01" id="n_price" class="form-control form-control-sm border-primary" placeholder="Final Price">
-                                                </div>
-                                                <div class="col-6">
-                                                    <label class="small text-muted fw-bold">Markup (%)</label>
-                                                    <div class="input-group input-group-sm">
-                                                        <input type="number" step="0.01" id="markup_pct" class="form-control">
-                                                        <span class="input-group-text">%</span>
-                                                    </div>
-                                                </div>
-                                                <div class="col-6">
-                                                    <label class="small text-muted fw-bold">Margin (%)</label>
-                                                    <div class="input-group input-group-sm">
-                                                        <input type="number" step="0.01" id="margin_pct" class="form-control">
-                                                        <span class="input-group-text">%</span>
-                                                    </div>
-                                                </div>
-                                                <div class="col-12 mt-2 pt-2 border-top">
-                                                    <label class="small text-muted fw-bold">Item Total</label>
-                                                    <div class="input-group input-group-sm">
-                                                        <span class="input-group-text bg-primary text-white border-primary">₱</span>
-                                                        <input type="text" id="total_display" class="form-control fw-bold text-primary bg-light" readonly value="0.00">
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="col-12 mt-3">
-                                        <button type="submit" class="btn btn-success w-100 fw-bold shadow-sm">
-                                            <i class="fas fa-plus-circle me-1"></i> Add to Quote
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </form>
+    
+    <div class="container-fluid mt-4 pb-5 px-md-4">
+        
+        <div class="row g-3 mb-4">
+            <div class="col-xl-3 col-md-6">
+                <div class="card stat-card shadow-sm bg-white position-relative overflow-hidden">
+                    <div class="card-body">
+                        <i class="fas fa-clock stat-icon text-warning"></i>
+                        <h6 class="text-muted fw-bold text-uppercase mb-1">Pending Review</h6>
+                        <h3 class="mb-0 text-dark fw-bolder"><?= number_format($statData['Pending']['cnt']) ?> <small class="fs-6 text-muted fw-normal">Items</small></h3>
+                        <div class="mt-2 text-warning fw-bold small">₱<?= number_format($statData['Pending']['val'], 2) ?> Value</div>
                     </div>
                 </div>
             </div>
-
-            <div class="col-lg-8">
-                
-                <?php if(isset($_GET['msg'])): ?>
-                    <?php if($_GET['msg']=='error_stock'): ?>
-                        <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> Cannot Finalize/Approve: <b>Insufficient Stock</b>.</div>
-                    <?php elseif($_GET['msg']=='error_db'): ?>
-                        <div class="alert alert-danger"><i class="fas fa-exclamation-triangle"></i> System Error: Failed to process transaction.</div>
-                    <?php elseif($_GET['msg']=='approved'): ?>
-                        <div class="alert alert-warning"><i class="fas fa-file-signature"></i> Quotation Approved & Stock Deducted (Pending Signatures).</div>
-                    <?php elseif($_GET['msg']=='success'): ?>
-                        <div class="alert alert-success"><i class="fas fa-check-circle"></i> Sale Finalized Successfully!</div>
-                    <?php elseif($_GET['msg']=='edited'): ?>
-                        <div class="alert alert-info"><i class="fas fa-edit"></i> Quotation successfully updated.</div>
-                    <?php elseif($_GET['msg']=='deleted'): ?>
-                        <div class="alert alert-danger"><i class="fas fa-trash-alt"></i> Item removed from list (and stock restored if approved).</div>
-                    <?php elseif($_GET['msg']=='created'): ?>
-                        <div class="alert alert-success"><i class="fas fa-check"></i> Quotation Created Successfully.</div>
-                    <?php elseif($_GET['msg']=='reserved_toggled'): ?>
-                        <div class="alert alert-info"><i class="fas fa-bookmark"></i> Item reservation status successfully updated.</div>
-                    <?php endif; ?>
-                <?php endif; ?>
-
-                <div class="card shadow-sm border-0 mb-4" id="queueCard" style="display: none;">
-                    <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between align-items-center">
-                        <div><i class="fas fa-shopping-cart me-2"></i>Current Quote Draft</div>
-                        <span class="badge bg-dark rounded-pill"><span id="queueCount">0</span> Items</span>
-                    </div>
-                    <div class="card-body p-0 table-responsive">
-                        <table class="table table-hover table-sm mb-0 align-middle">
-                            <thead class="table-light text-muted small uppercase">
-                                <tr>
-                                    <th class="ps-3">Item Description</th>
-                                    <th class="text-center">Qty</th>
-                                    <th class="text-end">Unit Price</th>
-                                    <th class="text-end">Total Amount</th>
-                                    <th class="text-end pe-3">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="queueBody"></tbody>
-                        </table>
-                    </div>
-                    <div class="card-footer bg-light d-flex justify-content-end gap-2 p-3">
-                        <button class="btn btn-outline-danger fw-bold px-3" onclick="clearQueue()" title="Clear Draft">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                        <button class="btn btn-outline-dark fw-bold px-4" onclick="showPreviewNew()">
-                            <i class="fas fa-search me-1"></i> Preview Formal Document
-                        </button>
-                        <button class="btn btn-danger fw-bold px-4" onclick="saveQuoteBatch('Reserved')">
-                            <i class="fas fa-bookmark me-1"></i> Save & Reserve
-                        </button>
-                        <button class="btn btn-primary fw-bold px-4" onclick="saveQuoteBatch('Pending')">
-                            <i class="fas fa-save me-1"></i> Save Draft
-                        </button>
+            <div class="col-xl-3 col-md-6">
+                <div class="card stat-card shadow-sm bg-white position-relative overflow-hidden">
+                    <div class="card-body">
+                        <i class="fas fa-file-signature stat-icon text-info"></i>
+                        <h6 class="text-muted fw-bold text-uppercase mb-1">Approved & Ready</h6>
+                        <h3 class="mb-0 text-dark fw-bolder"><?= number_format($statData['Approved']['cnt']) ?> <small class="fs-6 text-muted fw-normal">Items</small></h3>
+                        <div class="mt-2 text-info fw-bold small">₱<?= number_format($statData['Approved']['val'], 2) ?> Value</div>
                     </div>
                 </div>
-                
-                <div class="d-flex justify-content-between align-items-end mb-3 mt-2">
-                    <h5 class="fw-bold mb-0 text-dark"><i class="fas fa-layer-group me-2"></i>Grouped Quotations</h5>
-                    <input type="text" class="form-control form-control-sm w-25 shadow-sm" placeholder="Search companies or items..." onkeyup="filterAccordions(this)">
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card stat-card shadow-sm bg-white position-relative overflow-hidden">
+                    <div class="card-body">
+                        <i class="fas fa-bookmark stat-icon text-danger"></i>
+                        <h6 class="text-muted fw-bold text-uppercase mb-1">Reserved Stock</h6>
+                        <h3 class="mb-0 text-dark fw-bolder"><?= number_format($statData['Reserved']['cnt']) ?> <small class="fs-6 text-muted fw-normal">Items</small></h3>
+                        <div class="mt-2 text-danger fw-bold small">₱<?= number_format($statData['Reserved']['val'], 2) ?> Value</div>
+                    </div>
                 </div>
+            </div>
+            <div class="col-xl-3 col-md-6">
+                <div class="card stat-card shadow-sm bg-white position-relative overflow-hidden border-start border-4 border-success">
+                    <div class="card-body">
+                        <i class="fas fa-check-double stat-icon text-success"></i>
+                        <h6 class="text-muted fw-bold text-uppercase mb-1">Converted to Sales</h6>
+                        <h3 class="mb-0 text-dark fw-bolder"><?= number_format($statData['Converted']['cnt']) ?> <small class="fs-6 text-muted fw-normal">Items</small></h3>
+                        <div class="mt-2 text-success fw-bold small">₱<?= number_format($statData['Converted']['val'], 2) ?> Value</div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                <div class="accordion shadow-sm border border-secondary-subtle" id="quotesAccordion" style="max-height: 75vh; overflow-y: auto; border-radius: 0.5rem;">
-                    <?php
-                    $conn = getDBConnection();
-                    $grouped = [];
-                    $res = $conn->query("SELECT * FROM quotations ORDER BY company ASC, date DESC, id DESC");
+        <div class="card shadow-sm border-0 mb-4 bg-white rounded">
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-3 p-3">
+                <div class="d-flex align-items-center gap-3">
+                    <button class="btn btn-primary fw-bold shadow-sm px-4 py-2 rounded-pill" onclick="openEncoderModal()">
+                        <i class="fas fa-plus-circle me-2"></i>Create New Quotation
+                    </button>
                     
-                    while($row = $res->fetch_assoc()) {
-                        $ref = $row['quote_ref'] ? $row['quote_ref'] : 'Unknown Ref';
-                        $grouped[$row['company']][$ref][] = $row;
+                    <button class="btn btn-warning text-dark fw-bold shadow-sm px-4 py-2 rounded-pill" onclick="openMergeModal()">
+    <i class="fas fa-object-group me-2"></i>Merge Duplicate Clients
+</button>
+
+                    <div class="btn-group shadow-sm" role="group" id="quoteFilters">
+                        <input type="radio" class="btn-check" name="qFilter" id="filterAll" value="all" checked onchange="applyQuoteFilters()">
+                        <label class="btn btn-outline-secondary fw-bold" for="filterAll">All Quotes</label>
+
+                        <input type="radio" class="btn-check" name="qFilter" id="filterAction" value="action" onchange="applyQuoteFilters()">
+                        <label class="btn btn-outline-secondary fw-bold" for="filterAction"><i class="fas fa-exclamation-circle me-1 text-warning"></i>Action Needed</label>
+
+                        <input type="radio" class="btn-check" name="qFilter" id="filterConverted" value="converted" onchange="applyQuoteFilters()">
+                        <label class="btn btn-outline-secondary fw-bold" for="filterConverted"><i class="fas fa-check-double me-1 text-success"></i>Converted</label>
+                    </div>
+                </div>
+                
+                <div class="input-group w-auto shadow-sm" style="max-width: 350px;">
+                    <span class="input-group-text bg-light border-end-0"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" id="mainSearchInput" class="form-control border-start-0 ps-0 bg-light" placeholder="Search companies, refs, or items..." onkeyup="applyQuoteFilters()">
+                </div>
+            </div>
+        </div>
+
+        <?php if(isset($_GET['msg'])): ?>
+            <div class="alert alert-info shadow-sm mb-4 alert-dismissible fade show">
+                <i class="fas fa-info-circle me-2"></i> 
+                <?php 
+                $msgs = [
+                    'error_stock' => 'Cannot Finalize/Approve: Insufficient Stock.',
+                    'error_db' => 'System Error: Failed to process transaction.',
+                    'approved' => 'Quotation Approved & Stock Deducted (Pending Signatures).',
+                    'success' => 'Sale Finalized Successfully!',
+                    'edited' => 'Quotation successfully updated.',
+                    'deleted' => 'Item removed from list (and stock restored if approved).',
+                    'created' => 'Quotation Created Successfully.',
+                    'reserved_toggled' => 'Item reservation status successfully updated.'
+                ];
+                echo isset($msgs[$_GET['msg']]) ? $msgs[$_GET['msg']] : 'Action completed.';
+                ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+
+        <div class="accordion" id="quotesAccordion">
+            <?php
+            $grouped = [];
+            $res = $conn->query("SELECT * FROM quotations ORDER BY company ASC, date DESC, id DESC");
+            while($row = $res->fetch_assoc()) {
+                $ref = $row['quote_ref'] ? $row['quote_ref'] : 'Unknown Ref';
+                $grouped[$row['company']][$ref][] = $row;
+            }
+
+            $i = 0;
+            foreach($grouped as $company => $refs):
+                $i++;
+                $totalItems = 0;
+                $pendingCount = 0;
+                foreach($refs as $ref => $quotes) {
+                    foreach($quotes as $q) {
+                        $totalItems++;
+                        if($q['status'] != 'Converted') $pendingCount++;
                     }
-
-                    $i = 0;
-                    foreach($grouped as $company => $refs):
-                        $i++;
-                        
-                        $totalItems = 0;
-                        $pendingCount = 0;
-                        foreach($refs as $ref => $quotes) {
-                            foreach($quotes as $q) {
-                                $totalItems++;
-                                if($q['status'] != 'Converted') $pendingCount++;
-                            }
-                        }
-                    ?>
-                    <div class="accordion-item border-0 border-bottom overflow-hidden company-group">
-                        <h2 class="accordion-header" id="heading<?= $i ?>">
-                            <button class="accordion-button <?= $i==1?'':'collapsed' ?> bg-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>">
-                                <div>
-                                    <i class="fas fa-building text-primary me-2"></i> <strong class="company-name"><?= htmlspecialchars($company) ?></strong>
-                                    <span class="badge bg-secondary ms-2"><?= $totalItems ?> Items</span>
-                                    <?php if($pendingCount > 0): ?>
-                                        <span class="badge bg-warning text-dark ms-1"><?= $pendingCount ?> Action Required</span>
-                                    <?php endif; ?>
-                                </div>
-                            </button>
-                        </h2>
-                        
-                        <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>" data-bs-parent="#quotesAccordion">
-                            <div class="accordion-body p-0 bg-light">
-                                
-                                <?php foreach($refs as $ref => $quotes): 
-                                    $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); 
-                                ?>
-                                <div class="p-3 border-bottom bg-white shadow-sm mb-2 rounded mx-2 mt-2">
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <h6 class="text-primary fw-bold mb-0">
-                                            <i class="fas fa-file-invoice me-1"></i> Ref: <?= $ref ?>
-                                            
-                                            <button class="btn btn-sm btn-outline-success ms-3 shadow-sm fw-bold" 
-                                                    onclick='addItemsToExisting(<?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['po_number'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['payment_term'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['remarks'] ?? ''), ENT_QUOTES, "UTF-8") ?>)' 
-                                                    title="Add more items to this specific Quotation">
-                                                <i class="fas fa-plus me-1"></i> Add Item
-                                            </button>
-
-                                            <button class="btn btn-sm btn-outline-primary ms-1 shadow-sm fw-bold" 
-                                                    onclick='editGroupDetails(<?= json_encode($ref) ?>, <?= json_encode($quotes[0]) ?>)' 
-                                                    title="Edit Group Info (PO, Terms, Remarks)">
-                                                <i class="fas fa-edit"></i>
-                                            </button>
-
-                                            <button class="btn btn-sm btn-outline-dark ms-1 shadow-sm fw-bold" 
-                                                    onclick='printGroupedQuote(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>)' 
-                                                    title="Print Formal Document">
-                                                <i class="fas fa-print me-1"></i> Print Formal Quote
-                                            </button>
-
-                                            <form method="POST" onsubmit="return confirm('Are you sure you want to delete this ENTIRE quotation?');" class="d-inline">
-                                                <input type="hidden" name="delete_quote_ref" value="<?= $ref ?>">
-                                                <button class="btn btn-sm btn-outline-danger ms-1 shadow-sm fw-bold" title="Delete Entire Quotation">
-                                                    <i class="fas fa-trash-alt"></i>
-                                                </button>
-                                            </form>
-
-                                        </h6>
-                                        <div class="text-end">
-                                            <span class="text-muted small fw-bold"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
-                                            <span class="badge border bg-light text-dark ms-2">Inquiry #: <?= $quotes[0]['po_number'] ?? 'N/A' ?></span>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="table-responsive">
-                                        <table class="table table-hover table-sm mb-0 align-middle">
-                                            <thead class="table-light text-muted small uppercase border-top border-bottom">
-                                                <tr>
-                                                    <th width="35%" class="ps-2">Item Details</th>
-                                                    <th class="text-center" width="10%">Qty</th>
-                                                    <th class="text-end" width="20%">Unit / Total</th>
-                                                    <th width="15%" class="text-center">Status</th>
-                                                    <th class="text-end pe-2" width="20%">Actions</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php foreach($quotes as $row): 
-                                                    $status = $row['status'] ?: 'Pending';
-                                                    $badge = 'secondary';
-                                                    if ($status == 'Approved') $badge = 'warning text-dark';
-                                                    if ($status == 'Reserved') $badge = 'danger';
-                                                    if ($status == 'Converted') $badge = 'success';
-                                                    $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
-                                                ?>
-                                                <tr class="item-row <?= $status=='Converted'?'opacity-50 bg-light':'' ?>">
-                                                    <td class="ps-2"><strong class="item-name text-dark"><?= $row['item'] ?></strong></td>
-                                                    <td class="text-center"><?= $row['quantity_requested'] ?></td>
-                                                    <td class="text-end">
-                                                        <small class="text-muted d-block">₱<?= number_format($row['nam_unit_price'], 2) ?></small>
-                                                        <strong class="text-dark">₱<?= number_format($totalAmt, 2) ?></strong>
-                                                    </td>
-                                                    <td class="text-center"><span class="badge bg-<?= $badge ?>"><?= $status ?></span></td>
-                                                    <td class="text-end pe-2">
-                                                        <div class="d-flex justify-content-end gap-1">
-                                                            
-                                                            <button class="btn btn-sm btn-outline-info fw-bold" onclick='buyAgain(<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8") ?>)' title="Buy Again / Duplicate to Draft"><i class="fas fa-redo-alt"></i></button>
-
-                                                            <?php if($status != 'Converted'): ?>
-                                                                <button class="btn btn-sm btn-outline-primary" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
-                                                                
-                                                                <form method="POST" onsubmit="return confirm('Are you sure you want to remove this item?');" class="d-inline">
-                                                                    <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm btn-outline-danger" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
-                                                                </form>
-                                                            <?php endif; ?>
-
-                                                            <?php if($status == 'Pending' || $status == 'Reserved'): ?>
-                                                                <form method="POST" class="d-inline">
-                                                                    <input type="hidden" name="toggle_reserve_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm <?= $status == 'Reserved' ? 'btn-danger' : 'btn-outline-danger' ?> fw-bold" title="<?= $status == 'Reserved' ? 'Remove Reservation' : 'Reserve Item' ?>">
-                                                                        <i class="fas fa-bookmark"></i>
-                                                                    </button>
-                                                                </form>
-                                                                
-                                                                <form method="POST" onsubmit="return confirm('Approve this item? This will DEDUCT stock.');" class="d-inline">
-                                                                    <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm btn-warning fw-bold" title="Approve & Deduct Stock"><i class="fas fa-file-signature"></i></button>
-                                                                </form>
-                                                            <?php endif; ?>
-                                                            
-                                                            <?php if($status == 'Pending' || $status == 'Approved' || $status == 'Reserved'): ?>
-                                                                <form method="POST" onsubmit="return confirm('Finalize to Sale?');" class="d-inline">
-                                                                    <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
-                                                                    <button class="btn btn-sm btn-success fw-bold" title="Finalize to Sale"><i class="fas fa-check-double"></i></button>
-                                                                </form>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                                
+                }
+            ?>
+            <div class="accordion-item company-group bg-white overflow-hidden">
+                <h2 class="accordion-header" id="heading<?= $i ?>">
+                    <button class="accordion-button <?= $i==1?'':'collapsed' ?> py-3" type="button" data-bs-toggle="collapse" data-bs-target="#collapse<?= $i ?>">
+                        <div class="w-100 d-flex justify-content-between align-items-center pe-3">
+                            <div>
+                                <i class="fas fa-building text-primary me-2 fs-5 align-middle"></i> 
+                                <strong class="company-name fs-5 align-middle"><?= htmlspecialchars($company) ?></strong>
+                            </div>
+                            <div class="text-end">
+                                <?php if($pendingCount > 0): ?>
+                                    <span class="badge bg-warning text-dark me-2 px-3 py-2 rounded-pill"><i class="fas fa-exclamation-circle me-1"></i><?= $pendingCount ?> Action Required</span>
+                                <?php endif; ?>
+                                <span class="badge bg-light text-dark border px-3 py-2 rounded-pill"><?= $totalItems ?> Items Total</span>
                             </div>
                         </div>
+                    </button>
+                </h2>
+                
+                <div id="collapse<?= $i ?>" class="accordion-collapse collapse <?= $i==1?'show':'' ?>" data-bs-parent="#quotesAccordion">
+                    <div class="accordion-body p-4 bg-light bg-opacity-50">
+                        
+                        <?php foreach($refs as $ref => $quotes): 
+                            $quoteDate = date('F d, Y', strtotime($quotes[0]['date'])); 
+                        ?>
+                        <div class="card shadow-sm border-0 mb-4 rounded-3 overflow-hidden">
+                            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                                <div class="d-flex align-items-center gap-3">
+                                    <h5 class="text-dark fw-bolder mb-0"><i class="fas fa-file-invoice text-secondary me-2"></i>Ref: <span class="text-primary"><?= $ref ?></span></h5>
+                                    <span class="badge bg-light text-dark border"><i class="far fa-calendar-alt me-1"></i> <?= $quoteDate ?></span>
+                                    <?php if(!empty($quotes[0]['po_number'])): ?>
+                                        <span class="badge bg-info text-dark bg-opacity-25 border border-info">Inquiry #: <?= $quotes[0]['po_number'] ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-outline-success fw-bold" 
+                                            onclick='addItemsToExisting(<?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['po_number'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['payment_term'] ?? ''), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($quotes[0]['remarks'] ?? ''), ENT_QUOTES, "UTF-8") ?>)' 
+                                            title="Add more items to this specific Quotation">
+                                        <i class="fas fa-plus me-1"></i> Add Item
+                                    </button>
+
+                                    <button class="btn btn-sm btn-outline-primary fw-bold" 
+                                            onclick='editGroupDetails(<?= json_encode($ref) ?>, <?= json_encode($quotes[0]) ?>)' 
+                                            title="Edit Group Info (PO, Terms, Remarks)">
+                                        <i class="fas fa-edit"></i> Edit Group
+                                    </button>
+
+                                    <button class="btn btn-sm btn-dark fw-bold shadow-sm" 
+                                            onclick='printGroupedQuote(<?= htmlspecialchars(json_encode($quotes), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($company), ENT_QUOTES, "UTF-8") ?>, <?= htmlspecialchars(json_encode($ref), ENT_QUOTES, "UTF-8") ?>)' 
+                                            title="Print Formal Document">
+                                        <i class="fas fa-print me-1"></i> Print Formal Quote
+                                    </button>
+
+                                    <form method="POST" onsubmit="return confirm('Are you sure you want to delete this ENTIRE quotation?');" class="d-inline">
+                                        <input type="hidden" name="delete_quote_ref" value="<?= $ref ?>">
+                                        <button class="btn btn-sm btn-outline-danger fw-bold" title="Delete Entire Quotation">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 align-middle">
+                                    <thead class="table-light text-muted small text-uppercase fw-bold border-bottom">
+                                        <tr>
+                                            <th width="35%" class="ps-4">Item Details</th>
+                                            <th class="text-center" width="10%">Qty</th>
+                                            <th class="text-end" width="20%">Unit Price / Total</th>
+                                            <th width="15%" class="text-center">Status</th>
+                                            <th class="text-end pe-4" width="20%">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach(array_reverse($quotes) as $row): 
+                                            $status = $row['status'] ?: 'Pending';
+                                            $badge = 'secondary';
+                                            if ($status == 'Approved') $badge = 'info text-dark';
+                                            if ($status == 'Reserved') $badge = 'danger';
+                                            if ($status == 'Converted') $badge = 'success';
+                                            $totalAmt = $row['quantity_requested'] * $row['nam_unit_price'];
+                                        ?>
+                                        <tr class="item-row <?= $status=='Converted'?'opacity-50 bg-light':'' ?>">
+                                            <td class="ps-4 py-3"><strong class="item-name text-dark fs-6"><?= $row['item'] ?></strong></td>
+                                            <td class="text-center py-3"><span class="fs-6 fw-bold"><?= $row['quantity_requested'] ?></span></td>
+                                            <td class="text-end py-3">
+                                                <small class="text-muted d-block">₱<?= number_format($row['nam_unit_price'], 2) ?></small>
+                                                <strong class="text-primary fs-6">₱<?= number_format($totalAmt, 2) ?></strong>
+                                            </td>
+                                            <td class="text-center py-3"><span class="badge bg-<?= $badge ?> fs-6 rounded-pill px-3"><?= $status ?></span></td>
+                                            <td class="text-end pe-4 py-3">
+                                                <div class="d-flex justify-content-end gap-2">
+                                                    
+                                                    <button class="btn btn-sm btn-light border text-secondary fw-bold shadow-sm" onclick='buyAgain(<?= htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8") ?>)' title="Buy Again / Duplicate to Draft"><i class="fas fa-redo-alt"></i></button>
+
+                                                    <?php if($status != 'Converted'): ?>
+                                                        <button class="btn btn-sm btn-light border text-primary shadow-sm" onclick='openEditModal(<?= json_encode($row) ?>)' title="Edit Details"><i class="fas fa-edit"></i></button>
+                                                        
+                                                        <form method="POST" onsubmit="return confirm('Are you sure you want to remove this item?');" class="d-inline">
+                                                            <input type="hidden" name="delete_id" value="<?= $row['id'] ?>">
+                                                            <button class="btn btn-sm btn-light border text-danger shadow-sm" title="Remove Item"><i class="fas fa-trash-alt"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
+
+                                                    <?php if($status == 'Pending' || $status == 'Reserved'): ?>
+                                                        <form method="POST" class="d-inline">
+                                                            <input type="hidden" name="toggle_reserve_id" value="<?= $row['id'] ?>">
+                                                            <button class="btn btn-sm shadow-sm <?= $status == 'Reserved' ? 'btn-danger' : 'btn-outline-danger bg-white' ?>" title="<?= $status == 'Reserved' ? 'Remove Reservation' : 'Reserve Item' ?>">
+                                                                <i class="fas fa-bookmark"></i>
+                                                            </button>
+                                                        </form>
+                                                        
+                                                        <form method="POST" onsubmit="return confirm('Approve this item? This will DEDUCT stock.');" class="d-inline">
+                                                            <input type="hidden" name="approve_id" value="<?= $row['id'] ?>">
+                                                            <button class="btn btn-sm btn-warning fw-bold shadow-sm" title="Approve & Deduct Stock"><i class="fas fa-file-signature"></i></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                    
+                                                    <?php if($status == 'Pending' || $status == 'Approved' || $status == 'Reserved'): ?>
+                                                        <form method="POST" onsubmit="return confirm('Finalize to Sale?');" class="d-inline">
+                                                            <input type="hidden" name="convert_id" value="<?= $row['id'] ?>">
+                                                            <button class="btn btn-sm btn-success fw-bold shadow-sm px-3" title="Finalize to Sale"><i class="fas fa-check"></i> Finalize</button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                        
                     </div>
-                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <div class="modal fade" id="encoderModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-primary text-white py-3">
+                    <h5 class="modal-title fw-bold fs-5"><i class="fas fa-magic me-2"></i>Quotation Draft Workspace</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="checkQueueBeforeClose()"></button>
+                </div>
+                <div class="modal-body bg-light p-4">
+                    <div class="row g-4 h-100">
+                        
+                        <div class="col-lg-4 border-end pe-lg-4">
+                            <h6 class="text-primary fw-bold text-uppercase border-bottom pb-2 mb-3"><i class="fas fa-edit me-2"></i>Item Entry Form</h6>
+                            
+                            <form id="quoteForm" onsubmit="event.preventDefault(); addToQuote();">
+                                <input type="hidden" id="categoryField">
+                                
+                                <div class="mb-4 bg-white p-3 rounded shadow-sm border border-secondary-subtle">
+                                    <div class="form-section-header text-dark border-secondary">1. Document Header</div>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <label class="small text-muted fw-bold">Date</label>
+                                            <input type="date" id="date" class="form-control form-control-sm bg-light" value="<?= date('Y-m-d') ?>" required>
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="small text-muted fw-bold">Quote Reference</label>
+                                            <input type="text" id="quote_ref" class="form-control form-control-sm bg-light fw-bold" value="<?= $next_ref_default ?>" required>
+                                        </div>
+                                        
+                                        <div class="col-12 mt-3">
+                                            <label class="small text-muted fw-bold d-flex justify-content-between align-items-end mb-1">
+                                                <span>Client Company</span>
+                                                <a href="javascript:void(0)" onclick="openClientListModal()" class="text-decoration-none small text-primary fw-bold"><i class="fas fa-list me-1"></i>Select from List</a>
+                                            </label>
+                                            <input type="text" id="company" class="form-control form-control-sm border-primary shadow-sm" placeholder="Search client..." required autocomplete="off">
+                                        </div>
+                                        
+                                        <div class="col-12">
+                                            <label class="small text-muted fw-bold mt-2">Company Address</label>
+                                            <input type="text" id="address" class="form-control form-control-sm" placeholder="Address">
+                                        </div>
+
+                                        <div class="col-6 mt-2">
+                                            <label class="small text-muted fw-bold">Inquiry #</label>
+                                            <input type="text" id="po" class="form-control form-control-sm" placeholder="Optional">
+                                        </div>
+                                        <div class="col-6 mt-2">
+                                            <label class="small text-muted fw-bold">Terms</label>
+                                            <input type="text" id="term" class="form-control form-control-sm" placeholder="e.g. 30 Days">
+                                        </div>
+                                        <div class="col-12 mt-2">
+                                            <textarea id="remarks" class="form-control form-control-sm" placeholder="Group Remarks / Notes..." rows="2"></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="bg-white p-3 rounded shadow-sm border border-success-subtle">
+                                    <div class="form-section-header text-success border-success">2. Add Item to Draft</div>
+                                    <div class="row g-2">
+                                        <div class="col-12">
+                                            <label class="small text-muted fw-bold">Item Description</label>
+                                            <input type="text" id="itemInput" list="productList" class="form-control form-control-sm border-success shadow-sm" placeholder="Search inventory..." autocomplete="off">
+                                            <datalist id="productList"></datalist>
+                                        </div>
+                                        <div class="col-12 mt-2">
+                                            <label class="small text-muted fw-bold">Quantity</label>
+                                            <input type="number" id="quantity" class="form-control form-control-sm text-center fw-bold fs-6" placeholder="Qty" value="1" min="1">
+                                            
+                                            <div id="stockTracker" class="mt-2 p-2 bg-light border rounded border-info-subtle" style="display: none; font-size: 0.75rem;">
+                                                <div class="d-flex justify-content-between mb-1">
+                                                    <span class="text-muted">On-Hand Stock:</span>
+                                                    <span class="fw-bold text-dark" id="infoStock">0</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between mb-1 border-bottom pb-1">
+                                                    <span class="text-danger">Reserved:</span>
+                                                    <span class="fw-bold text-danger" id="infoReserved">0</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between mt-1">
+                                                    <span class="text-success fw-bold">True Available:</span>
+                                                    <span class="fw-bold text-success" id="infoAvailable">0</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-12 mt-3">
+                                            <div class="border rounded p-2 bg-light border-secondary-subtle">
+                                                <div class="row g-2">
+                                                    <div class="col-6">
+                                                        <label class="small text-muted fw-bold">Supplier Cost</label>
+                                                        <input type="number" step="0.01" id="s_price" class="form-control form-control-sm text-end" placeholder="0.00">
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <label class="small text-primary fw-bold">Selling Price</label>
+                                                        <input type="number" step="0.01" id="n_price" class="form-control form-control-sm border-primary text-end fw-bold" placeholder="0.00">
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <label class="small text-muted fw-bold">Markup (%)</label>
+                                                        <div class="input-group input-group-sm">
+                                                            <input type="number" step="0.01" id="markup_pct" class="form-control text-end">
+                                                            <span class="input-group-text">%</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <label class="small text-muted fw-bold">Margin (%)</label>
+                                                        <div class="input-group input-group-sm">
+                                                            <input type="number" step="0.01" id="margin_pct" class="form-control text-end">
+                                                            <span class="input-group-text">%</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-12 mt-2 pt-2 border-top">
+                                                        <label class="small text-muted fw-bold">Item Total</label>
+                                                        <div class="input-group input-group-sm shadow-sm">
+                                                            <span class="input-group-text bg-primary text-white border-primary">₱</span>
+                                                            <input type="text" id="total_display" class="form-control fw-bold text-primary bg-white text-end fs-6" readonly value="0.00">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-12 mt-4">
+                                            <button type="submit" class="btn btn-success w-100 fw-bold shadow py-2 fs-6">
+                                                <i class="fas fa-arrow-right me-2"></i> Add to Draft Queue
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="col-lg-8 d-flex flex-column h-100">
+                            <h6 class="text-warning text-dark fw-bold text-uppercase border-bottom pb-2 mb-3 d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-shopping-cart me-2"></i>Current Draft List</span>
+                                <span class="badge bg-dark rounded-pill" id="queueCount">0 Items</span>
+                            </h6>
+                            
+                            <div class="flex-grow-1 bg-white border rounded shadow-sm overflow-auto mb-3" style="min-height: 400px; max-height: 60vh;">
+                                <table class="table table-hover align-middle mb-0" id="queueCardTable">
+                                    <thead class="table-light text-muted small text-uppercase sticky-top shadow-sm">
+                                        <tr>
+                                            <th class="ps-3 py-3">Description</th>
+                                            <th class="text-center py-3">Qty</th>
+                                            <th class="text-end py-3">Unit Price</th>
+                                            <th class="text-end py-3">Total Amount</th>
+                                            <th class="text-end pe-3 py-3">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="queueBody">
+                                        <tr>
+                                            <td colspan="5" class="text-center py-5 text-muted">
+                                                <i class="fas fa-inbox fa-3x mb-3 opacity-25"></i><br>
+                                                Queue is empty. Add items from the left panel.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="d-flex justify-content-between align-items-center bg-white p-3 border rounded shadow-sm">
+                                <div>
+                                    <button class="btn btn-outline-danger fw-bold shadow-sm" onclick="clearQueue()" title="Clear Entire Draft">
+                                        <i class="fas fa-trash-alt me-2"></i>Clear Queue
+                                    </button>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-outline-dark fw-bold shadow-sm px-4" onclick="showPreviewNew()">
+                                        <i class="fas fa-search me-2"></i> Preview Formal Document
+                                    </button>
+                                    <button class="btn btn-danger fw-bold shadow-sm px-4" onclick="saveQuoteBatch('Reserved')">
+                                        <i class="fas fa-bookmark me-2"></i> Save & Reserve
+                                    </button>
+                                    <button class="btn btn-primary fw-bold shadow-sm px-4" onclick="saveQuoteBatch('Pending')">
+                                        <i class="fas fa-save me-2"></i> Save Quote Draft
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
 
     <div class="modal fade" id="editModal" tabindex="-1">
         <div class="modal-dialog">
@@ -802,9 +843,9 @@ if ($resReserved) {
                         <input type="hidden" name="edit_id" id="edit_id">
                         
                         <div class="mb-2">
-                            <label class="small text-muted fw-bold">Item</label>
-                            <input type="text" id="edit_item_display" class="form-control bg-light" readonly>
-                        </div>
+    <label class="small text-muted fw-bold">Item Description</label>
+    <input type="text" name="edit_item" id="edit_item_display" class="form-control border-primary fw-bold text-dark" required>
+</div>
                         <div class="row g-2">
                             <div class="col-12">
                                 <label class="small text-muted fw-bold">Quantity</label>
@@ -886,7 +927,7 @@ if ($resReserved) {
 
     <div class="modal fade" id="previewModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
-            <div class="modal-content border-0">
+            <div class="modal-content border-0 shadow-lg">
                 <div class="modal-header bg-dark text-white">
                     <h5 class="modal-title fw-bold"><i class="fas fa-print me-2"></i>Formal Document Preview</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -902,17 +943,90 @@ if ($resReserved) {
         </div>
     </div>
 
+    <div class="modal fade" id="mergeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-warning text-dark py-3">
+                <h5 class="modal-title fw-bold fs-5"><i class="fas fa-object-group me-2"></i>Merge Duplicate Clients</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" onsubmit="submitMerge(event)">
+                <div class="modal-body bg-light p-4">
+                    <input type="hidden" name="action" value="merge_companies">
+                    <input type="hidden" name="duplicates" id="duplicatesList">
+                    
+                    <div class="mb-4">
+                        <label class="fw-bold text-dark small mb-2">1. Select the CORRECT (Target) Name:</label>
+                        <select name="target_company" id="mergeTarget" class="form-select border-warning shadow-sm fw-bold text-primary" required>
+                            <option value="">-- Choose the Primary Name --</option>
+                            <?php foreach(array_keys($clientData) as $c): ?>
+                                <option value="<?= htmlspecialchars($c) ?>"><?= htmlspecialchars($c) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="fw-bold text-dark small mb-2">2. Check all the TYPOS/DUPLICATES to merge into the target:</label>
+                        <div class="bg-white border rounded p-2 shadow-sm" style="max-height: 250px; overflow-y: auto;">
+                            <?php foreach(array_keys($clientData) as $c): ?>
+                                <div class="form-check border-bottom py-1">
+                                    <input class="form-check-input duplicate-checkbox" type="checkbox" value="<?= htmlspecialchars($c) ?>" id="chk_<?= md5($c) ?>">
+                                    <label class="form-check-label w-100" style="cursor: pointer;" for="chk_<?= md5($c) ?>"><?= htmlspecialchars($c) ?></label>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-danger py-2 small mb-0 fw-bold border-danger shadow-sm">
+                        <i class="fas fa-exclamation-triangle me-1"></i> Warning: This permanently updates all past quotes and sales to use the correct name.
+                    </div>
+                </div>
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-secondary fw-bold" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning fw-bold text-dark px-4"><i class="fas fa-check-double me-2"></i>Execute Merge</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+    <div class="modal fade" id="clientListModal" tabindex="-1" style="z-index: 1060;">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fw-bold"><i class="fas fa-users me-2"></i>Select Client</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body bg-light">
+                    <input type="text" id="clientSearch" class="form-control mb-3 shadow-sm" placeholder="Search Company Name..." onkeyup="renderClientList(this.value)">
+                    <div style="max-height: 400px; overflow-y: auto;" class="bg-white border rounded">
+                        <table class="table table-hover table-sm mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr><th>Company</th><th>Address</th><th class="text-end pe-3">Action</th></tr>
+                            </thead>
+                            <tbody id="clientListBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="printContainer" class="d-none d-print-block"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
     let productMap = new Map();
     let quoteQueue = []; 
+    let encoderModalInstance;
     
     const clientData = <?php echo json_encode($clientData); ?>;
     const reservedData = <?php echo json_encode($reservedData); ?>;
 
     document.addEventListener("DOMContentLoaded", () => {
+        encoderModalInstance = new bootstrap.Modal(document.getElementById('encoderModal'));
+        clientListModalInstance = new bootstrap.Modal(document.getElementById('clientListModal'));
+
         fetch('get_all_products.php')
             .then(res => res.json())
             .then(data => {
@@ -935,6 +1049,58 @@ if ($resReserved) {
         attachPriceCalculators('edit_s_price', 'edit_n_price', 'edit_markup_pct', 'edit_margin_pct', 'edit_quantity', 'edit_total_display');
     });
 
+    // --- ENCODER MODAL CONTROLS ---
+    function openEncoderModal() {
+        encoderModalInstance.show();
+    }
+
+    function checkQueueBeforeClose() {
+        if(quoteQueue.length > 0) {
+            if(!confirm("You have unsaved items in your draft queue. Are you sure you want to close? Your draft will be lost if you refresh the page.")) {
+                encoderModalInstance.show(); 
+            }
+        }
+    }
+
+    // --- CLIENT LIST LOGIC ---
+    let clientListModalInstance;
+    function openClientListModal() {
+        renderClientList('');
+        document.getElementById('clientSearch').value = '';
+        clientListModalInstance.show();
+        setTimeout(() => document.getElementById('clientSearch').focus(), 500);
+    }
+
+    function renderClientList(filter = '') {
+        const tbody = document.getElementById('clientListBody');
+        tbody.innerHTML = '';
+        filter = filter.toLowerCase();
+
+        Object.keys(clientData).forEach(comp => {
+            if(comp.toLowerCase().includes(filter)) {
+                const c = clientData[comp];
+                const safeComp = comp.replace(/'/g, "\\'"); 
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="fw-bold text-primary align-middle ps-3">${comp}</td>
+                        <td class="align-middle"><small class="d-inline-block text-truncate" style="max-width: 200px;">${c.address || '-'}</small></td>
+                        <td class="text-end align-middle pe-3">
+                            <button class="btn btn-sm btn-primary py-1 px-3 shadow-sm" onclick="selectClient('${safeComp}')"><i class="fas fa-check me-1"></i>Select</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+    }
+
+    function selectClient(comp) {
+        const companyInput = document.getElementById('company');
+        companyInput.value = comp;
+        companyInput.dispatchEvent(new Event('input')); 
+        clientListModalInstance.hide();
+    }
+
     document.getElementById('company').addEventListener('input', function() {
         const compName = this.value;
         if (clientData.hasOwnProperty(compName)) {
@@ -954,6 +1120,7 @@ if ($resReserved) {
         }
     });
 
+    // --- ITEM & QUEUE LOGIC ---
     document.getElementById('itemInput').addEventListener('input', function() {
         const p = productMap.get(this.value);
         if (p) {
@@ -978,25 +1145,6 @@ if ($resReserved) {
         }
     });
 
-    document.getElementById('quantity').addEventListener('input', function() {
-        if (document.getElementById('stockTracker').style.display !== 'none') {
-            const reqQty = parseFloat(this.value) || 0;
-            const available = parseInt(document.getElementById('infoAvailable').innerText) || 0;
-            const left = available - reqQty;
-            
-            const leftEl = document.getElementById('infoLeft');
-            leftEl.innerText = left;
-            
-            if (left < 0) {
-                leftEl.classList.remove('text-primary');
-                leftEl.classList.add('text-danger');
-            } else {
-                leftEl.classList.remove('text-danger');
-                leftEl.classList.add('text-primary');
-            }
-        }
-    });
-
     function buyAgain(row) {
         if (!document.getElementById('company').value) {
             document.getElementById('company').value = row.company;
@@ -1018,37 +1166,7 @@ if ($resReserved) {
         });
 
         renderQueue();
-        document.getElementById('queueCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    function batchBuyAgain(quotesArray) {
-        if (!quotesArray || quotesArray.length === 0) return;
-        
-        const first = quotesArray[0];
-
-        if (!document.getElementById('company').value) {
-            document.getElementById('company').value = first.company || '';
-            document.getElementById('po').value = first.po_number || '';
-            document.getElementById('term').value = first.payment_term || '';
-            document.getElementById('remarks').value = first.remarks || '';
-            
-            if (clientData.hasOwnProperty(first.company) && clientData[first.company].address) {
-                document.getElementById('address').value = clientData[first.company].address;
-            }
-        }
-
-        quotesArray.forEach(row => {
-            quoteQueue.push({
-                item: row.item,
-                quantity: parseFloat(row.quantity_requested) || 1,
-                s_price: parseFloat(row.suppliers_price) || 0,
-                n_price: parseFloat(row.nam_unit_price) || 0,
-                category: row.category || 'Uncategorized'
-            });
-        });
-
-        renderQueue();
-        document.getElementById('queueCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        encoderModalInstance.show();
     }
 
     function clearQueue() {
@@ -1093,34 +1211,36 @@ if ($resReserved) {
     }
 
     function renderQueue() {
-        const card = document.getElementById('queueCard');
         const body = document.getElementById('queueBody');
         const count = document.getElementById('queueCount');
 
+        count.textContent = quoteQueue.length + " Items";
+
         if (quoteQueue.length === 0) {
-            card.style.display = 'none';
+            body.innerHTML = '<tr><td colspan="5" class="text-center py-5 text-muted"><i class="fas fa-inbox fa-3x mb-3 opacity-25"></i><br>Queue is empty. Add items from the left panel.</td></tr>';
             return;
         }
-
-        card.style.display = 'block';
-        count.textContent = quoteQueue.length;
 
         let html = '';
         quoteQueue.forEach((q, idx) => {
             const total = q.quantity * q.n_price;
             html += `
                 <tr>
-                    <td class="ps-3 fw-bold">${q.item}</td>
-                    <td class="text-center">${q.quantity}</td>
-                    <td class="text-end">₱${q.n_price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end text-primary fw-bold">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
-                    <td class="text-end pe-3">
+                    <td class="ps-3 fw-bold align-middle">${q.item}</td>
+                    <td class="text-center align-middle">${q.quantity}</td>
+                    <td class="text-end align-middle">₱${q.n_price.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end text-primary fw-bold align-middle fs-6">₱${total.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end pe-3 align-middle">
                         <button class="btn btn-sm btn-outline-danger" onclick="removeFromQueue(${idx})" title="Remove"><i class="fas fa-times"></i></button>
                     </td>
                 </tr>
             `;
         });
         body.innerHTML = html;
+        
+        // Auto scroll to bottom of queue
+        const tableContainer = document.getElementById('queueCardTable').parentElement;
+        tableContainer.scrollTop = tableContainer.scrollHeight;
     }
 
     function removeFromQueue(idx) {
@@ -1241,7 +1361,6 @@ if ($resReserved) {
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
-    // --- NEW: Open Group Edit Modal ---
     window.editGroupDetails = function(ref, quoteData) {
         document.getElementById('edit_group_ref').value = ref;
         document.getElementById('edit_group_po').value = quoteData.po_number || '';
@@ -1250,7 +1369,6 @@ if ($resReserved) {
         new bootstrap.Modal(document.getElementById('editGroupModal')).show();
     }
 
-    // --- NEW: Add Items directly to an existing quote group ---
     window.addItemsToExisting = function(company, ref, po, term, remarks) {
         document.getElementById('company').value = company;
         document.getElementById('quote_ref').value = ref;
@@ -1258,23 +1376,54 @@ if ($resReserved) {
         document.getElementById('term').value = term || '';
         document.getElementById('remarks').value = remarks || '';
         
-        // Also prefill address if it exists in the data map
         if (clientData.hasOwnProperty(company) && clientData[company].address) {
             document.getElementById('address').value = clientData[company].address;
         } else {
             document.getElementById('address').value = '';
         }
         
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        document.getElementById('itemInput').focus();
-        document.getElementById('company').dispatchEvent(new Event('input'));
-        
-        alert(`Draft encoder initialized for Quote Ref: ${ref}. New items added to the draft will merge into this existing quotation upon saving.`);
+        encoderModalInstance.show();
+        setTimeout(() => document.getElementById('itemInput').focus(), 500);
     }
 
-   // --- DYNAMIC PREVIEW RECALCULATION (FIXED GHOST CLONE BUG) ---
+    function applyQuoteFilters() {
+        const searchQuery = document.getElementById('mainSearchInput').value.toLowerCase();
+        const filterState = document.querySelector('input[name="qFilter"]:checked').value;
+        const groups = document.querySelectorAll('.company-group');
+
+        groups.forEach(group => {
+            const compName = group.querySelector('.company-name').innerText.toLowerCase();
+            const itemsText = group.querySelector('.accordion-body').innerText.toLowerCase();
+            
+            const matchesSearch = compName.includes(searchQuery) || itemsText.includes(searchQuery);
+            
+            let matchesStatus = true;
+            const hasPending = group.querySelector('.badge.bg-warning.text-dark') !== null; 
+            
+            if (filterState === 'action') {
+                matchesStatus = hasPending;
+            } else if (filterState === 'converted') {
+                matchesStatus = !hasPending && group.querySelectorAll('.item-row').length > 0; 
+            }
+
+            if (matchesSearch && matchesStatus) {
+                group.style.display = '';
+                if (searchQuery.length > 2 || filterState !== 'all') {
+                    const collapseTarget = group.querySelector('.accordion-collapse');
+                    const button = group.querySelector('.accordion-button');
+                    if (!collapseTarget.classList.contains('show')) {
+                        button.classList.remove('collapsed');
+                        collapseTarget.classList.add('show');
+                    }
+                }
+            } else {
+                group.style.display = 'none';
+            }
+        });
+    }
+
+    // --- FORMAL PREVIEW LOGIC ---
     function recalcPreview() {
-        // Only target the table inside the visible modal to prevent double-counting!
         let modalContent = document.getElementById('receiptContent');
         if (!modalContent) return;
 
@@ -1295,7 +1444,6 @@ if ($resReserved) {
             }
         });
         
-        // Grab VAT Type (can use document.getElementById since there's only one dropdown)
         let vatType = document.getElementById('prevVatType').value;
         let vatable = 0, vatAmt = 0, grandTotal = rawTotal;
         let vatLabel = 'VAT (12%):';
@@ -1324,7 +1472,6 @@ if ($resReserved) {
         
         let netPayable = Math.round((grandTotal - whtAmt) * 100) / 100;
         
-        // Safely apply calculations only to the visible modal
         modalContent.querySelector('#vatLabel').innerText = vatLabel;
         modalContent.querySelector('#prevVatable').innerText = '₱' + vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         modalContent.querySelector('#prevVatAmt').innerText = '₱' + vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -1332,7 +1479,6 @@ if ($resReserved) {
         modalContent.querySelector('#prevGrandTotal').innerText = '₱' + netPayable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // --- CACHED IMAGE UPLOAD LOGIC ---
     window.loadPreviewImg = function(input, storageKey) {
         if (input.files && input.files[0]) {
             const reader = new FileReader();
@@ -1348,19 +1494,16 @@ if ($resReserved) {
 
                 if (storageKey) {
                     try { localStorage.setItem('cache_img_' + storageKey, e.target.result); } 
-                    catch(err) { console.log('Storage Full'); }
+                    catch(err) {}
                 }
             }
             reader.readAsDataURL(input.files[0]);
         }
     }
 
-    // --- HTML BUILDER HELPER FOR CONTINUOUS PREVIEWS ---
     function buildItemRowHTML(q, index) {
         let total = q.quantity * q.n_price;
         let sn = String(index + 1).padStart(3, '0');
-        
-        // Create a safe, unique storage key per item
         let itemNameSafe = q.item ? q.item.replace(/['"\W]+/g, '_') : 'unknown';
         let cachedImg = localStorage.getItem('cache_img_' + itemNameSafe);
         
@@ -1390,7 +1533,6 @@ if ($resReserved) {
         `;
     }
 
-    // --- FORMAL DOCUMENT PRINT RENDERING (CACHED SIGNATURES) ---
     function renderFormalPrint(date, ref, client, address, tbodyHtml, grandTotal, po, term, remarks) {
         let vatable = grandTotal / 1.12;
         let vatAmt = grandTotal - vatable;
@@ -1424,7 +1566,6 @@ if ($resReserved) {
             </div>
 
             <div id="printArea" class="bg-white formal-sans" style="color: #000; line-height: 1.4;">
-                
                 <div class="d-flex justify-content-between align-items-start mb-4">
                     <div class="d-flex align-items-start">
                         <img src="YOUR_LOGO_HERE.png" alt="Logo" style="height: 60px; width: auto; margin-right: 15px; margin-top: 5px; object-fit: contain;" onerror="this.style.display='none'">
@@ -1450,58 +1591,22 @@ if ($resReserved) {
                     <div class="row" style="font-size: 0.85rem;">
                         <div class="col-8">
                             <table class="table table-sm table-borderless mb-0">
-                                <tr>
-                                    <th width="150" class="p-0 pb-0 align-top">COMPANY NAME:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100 fw-bold" style="outline: none;">${client}</div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">COMPANY ADDRESS:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]">${address || ''}</div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">CONTACT PERSON:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Person]"></div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">CONTACT NUMBER:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">EMAIL ADDRESS:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 mt-1 d-block align-top">TERMS:</th>
-                                    <td class="p-0 pb-0 mt-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">TRANSPORT:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td>
-                                </tr>
+                                <tr><th width="150" class="p-0 pb-0 align-top">COMPANY NAME:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100 fw-bold" style="outline: none;">${client}</div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">COMPANY ADDRESS:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Address]">${address || ''}</div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">CONTACT PERSON:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Person]"></div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">CONTACT NUMBER:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">EMAIL ADDRESS:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td></tr>
+                                <tr><th class="p-0 pb-0 mt-1 d-block align-top">TERMS:</th><td class="p-0 pb-0 mt-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">TRANSPORT:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td></tr>
                             </table>
                         </div>
                         <div class="col-4">
                             <table class="table table-sm table-borderless mb-0">
-                                <tr>
-                                    <th width="130" class="p-0 pb-0 align-top">QUOTATION NO:</th>
-                                    <td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">QUOTATION DATE:</th>
-                                    <td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 mt-4 d-block align-top">TRANSPORT ID:</th>
-                                    <td class="p-0 pb-0 mt-4"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 align-top">VEHICLE NO:</th>
-                                    <td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td>
-                                </tr>
-                                <tr>
-                                    <th class="p-0 pb-0 text-muted align-top">INQUIRY REF #:</th>
-                                    <td class="p-0 pb-0 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td>
-                                </tr>
+                                <tr><th width="130" class="p-0 pb-0 align-top">QUOTATION NO:</th><td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">QUOTATION DATE:</th><td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td></tr>
+                                <tr><th class="p-0 pb-0 mt-4 d-block align-top">TRANSPORT ID:</th><td class="p-0 pb-0 mt-4"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td></tr>
+                                <tr><th class="p-0 pb-0 align-top">VEHICLE NO:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td></tr>
+                                <tr><th class="p-0 pb-0 text-muted align-top">INQUIRY REF #:</th><td class="p-0 pb-0 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td></tr>
                             </table>
                         </div>
                     </div>
@@ -1523,22 +1628,10 @@ if ($resReserved) {
                         ${tbodyHtml}
                     </tbody>
                     <tfoot class="border-dark">
-                        <tr>
-                            <td colspan="6" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td>
-                            <td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td>
-                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
-                        <tr id="whtRow" class="d-none">
-                            <td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td>
-                            <td class="text-end py-0 pb-1 fw-bold border-bottom-0 text-danger" id="prevWhtAmt">-₱0.00</td>
-                        </tr>
-                        <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;">
-                            <td colspan="6" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td>
-                            <td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                        </tr>
+                        <tr><td colspan="6" class="text-end py-0 pt-1 fw-bold pe-3 border-bottom-0">VATABLE SALES:</td><td class="text-end py-0 pt-1 fw-bold border-bottom-0" id="prevVatable">₱${vatable.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td></tr>
+                        <tr><td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0" id="vatLabel">VAT (12%):</td><td class="text-end py-0 pb-1 fw-bold border-bottom-0" id="prevVatAmt">₱${vatAmt.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td></tr>
+                        <tr id="whtRow" class="d-none"><td colspan="6" class="text-end py-0 pb-1 fw-bold pe-3 border-bottom-0 text-danger">LESS 1% WHT:</td><td class="text-end py-0 pb-1 fw-bold border-bottom-0 text-danger" id="prevWhtAmt">-₱0.00</td></tr>
+                        <tr class="bg-light" style="-webkit-print-color-adjust: exact; print-color-adjust: exact;"><td colspan="6" class="text-end py-1 fw-bolder pe-3 fs-6">GRAND TOTAL AMOUNT</td><td class="text-end py-1 fs-6 fw-bolder" id="prevGrandTotal">₱${parseFloat(grandTotal).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td></tr>
                     </tfoot>
                 </table>
 
@@ -1618,11 +1711,16 @@ if ($resReserved) {
                         </div>
                     </div>
                 </div>
-
             </div>
         `;
         document.getElementById('receiptContent').innerHTML = html;
+        
+        encoderModalInstance.hide();
         new bootstrap.Modal(document.getElementById('previewModal')).show();
+        
+        document.getElementById('previewModal').addEventListener('hidden.bs.modal', function () {
+            encoderModalInstance.show();
+        }, { once: true });
     }
 
     function showPreviewNew() {
@@ -1652,32 +1750,34 @@ if ($resReserved) {
     }
 
     function printGroupedQuote(quotes, company, ref) {
-        let tbody = '';
-        let grandTotal = 0;
-        let date = quotes[0].date;
-        let po = quotes[0].po_number || '';
-        let term = quotes[0].payment_term || '';
-        let remarks = quotes[0].remarks || '';
-        
-        let address = '';
-        if (clientData.hasOwnProperty(company) && clientData[company].address) {
-            address = clientData[company].address;
-        }
-
-        quotes.forEach((q, index) => {
-            let itemObj = { item: q.item, quantity: parseFloat(q.quantity_requested)||0, n_price: parseFloat(q.nam_unit_price)||0 };
-            grandTotal += itemObj.quantity * itemObj.n_price;
-            tbody += buildItemRowHTML(itemObj, index);
-        });
-
-        renderFormalPrint(date, ref, company, address, tbody, grandTotal, po, term, remarks);
+    let tbody = '';
+    let grandTotal = 0;
+    
+    // Grab the header info from the newest entry
+    let date = quotes[0].date;
+    let po = quotes[0].po_number || '';
+    let term = quotes[0].payment_term || '';
+    let remarks = quotes[0].remarks || '';
+    
+    let address = '';
+    if (clientData.hasOwnProperty(company) && clientData[company].address) {
+        address = clientData[company].address;
     }
 
-    // --- PRINT EXECUTION (FIXED CLONE REMOVAL) ---
+    // --- THE FIX: Reverse the array so new items go to the bottom of the printout! ---
+    let printItems = [...quotes].reverse();
+
+    printItems.forEach((q, index) => {
+        let itemObj = { item: q.item, quantity: parseFloat(q.quantity_requested)||0, n_price: parseFloat(q.nam_unit_price)||0 };
+        grandTotal += itemObj.quantity * itemObj.n_price;
+        tbody += buildItemRowHTML(itemObj, index);
+    });
+
+    renderFormalPrint(date, ref, company, address, tbody, grandTotal, po, term, remarks);
+}
+
     function executePrint() {
         const printArea = document.getElementById('printArea');
-        
-        // Save the manual changes made to any remaining <input> tags before printing
         const inputs = printArea.querySelectorAll('input');
         inputs.forEach(input => {
             if(input.type !== 'file') {
@@ -1689,21 +1789,44 @@ if ($resReserved) {
         document.getElementById('printContainer').innerHTML = content;
         window.print();
         
-        // NEW: Destroy the hidden print clone after sending to printer to prevent calculation bugs!
-        setTimeout(() => {
-            document.getElementById('printContainer').innerHTML = '';
-        }, 1000);
+        setTimeout(() => { document.getElementById('printContainer').innerHTML = ''; }, 1000);
+    }
+
+    // --- MERGE CLIENTS LOGIC ---
+let mergeModalInstance;
+
+document.addEventListener("DOMContentLoaded", () => {
+    mergeModalInstance = new bootstrap.Modal(document.getElementById('mergeModal'));
+});
+
+function openMergeModal() {
+    mergeModalInstance.show();
+}
+
+function submitMerge(e) {
+    const checkboxes = document.querySelectorAll('.duplicate-checkbox:checked');
+    const target = document.getElementById('mergeTarget').value;
+    
+    let duplicates = [];
+    checkboxes.forEach(chk => {
+        if(chk.value !== target) {
+            duplicates.push(chk.value);
+        }
+    });
+    
+    if(duplicates.length === 0) {
+        e.preventDefault();
+        alert("Please check at least one duplicate name to merge.");
+        return;
     }
     
-    function filterAccordions(input) {
-        const filter = input.value.toLowerCase();
-        const groups = document.querySelectorAll('.company-group');
-        groups.forEach(group => {
-            const compName = group.querySelector('.company-name').innerText.toLowerCase();
-            const itemsText = group.querySelector('tbody').innerText.toLowerCase();
-            group.style.display = (compName.includes(filter) || itemsText.includes(filter)) ? '' : 'none';
-        });
+    document.getElementById('duplicatesList').value = JSON.stringify(duplicates);
+    
+    if(!confirm(`Are you completely sure you want to merge ${duplicates.length} duplicate(s) into "${target}"?`)) {
+        e.preventDefault();
     }
+}
+
     </script>
 </body>
 </html>

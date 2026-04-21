@@ -145,8 +145,9 @@ ksort($clientData);
                                         <input type="text" name="tin" class="form-control form-control-sm mt-1" placeholder="TIN">
                                     </div>
                                     <div class="col-6">
-                                        <input type="text" name="contact_person_contact" class="form-control form-control-sm mt-1" placeholder="Contact Person">
-                                    </div>
+    <label class="form-label small fw-bold text-muted mb-0">Contact Person</label>
+    <input type="text" name="contact_person_contact" class="form-control form-control-sm" placeholder="Optional">
+</div>
                                     <div class="col-6">
                                         <input type="text" name="payment_term" class="form-control form-control-sm mt-1" placeholder="Terms (e.g. 30 Days)">
                                     </div>
