@@ -1639,9 +1639,9 @@ if ($resReserved) {
                     <div class="col-7 pe-4">
                         <h6 class="fw-bold mb-1" style="font-size: 0.80rem;">PAYMENT DETAILS</h6>
                         <table class="table table-sm table-borderless mb-2 p-0">
-                            <tr><th width="100" class="p-0">BANK NAME</th><td class="p-0">: BANK OF COMMERCE</td></tr>
-                            <tr><th class="p-0">ACCOUNT NAME</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP</td></tr>
-                            <tr><th class="p-0">ACCOUNT NO.</th><td class="p-0">: 106-20-000556-1</td></tr>
+                            <tr><th width="100" class="p-0">BANK NAME</th><td class="p-0">: SECURITY BANK</td></tr>
+                            <tr><th class="p-0">ACCOUNT NAME</th><td class="p-0">: NAM BUILDERS AND SUPPLY CORP.</td></tr>
+                            <tr><th class="p-0">ACCOUNT NO.</th><td class="p-0">: 0000079551887</td></tr>
                         </table>
 
                         <h6 class="fw-bold mb-1" style="font-size: 0.80rem;">CHECK DETAILS</h6>

@@ -24,6 +24,12 @@
         .kpi-value { font-size: 26px; font-weight: 700; margin-top: 5px; color: #0f172a; white-space: nowrap;}
         .kpi-label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
         .icon-bg { position: absolute; right: -10px; bottom: -10px; font-size: 80px; opacity: 0.05; transform: rotate(-15deg); }
+
+        /* Custom slim scrollbar for the legend */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         
         /* Charts */
         .chart-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); height: 100%; border: none; }
@@ -257,15 +263,17 @@
 
         <div class="row g-4 mb-4">
             <div class="col-lg-3">
-                <div class="chart-card">
-                    <div class="chart-title">
-                        <span><i class="fas fa-chart-pie text-warning me-2"></i>By Category</span>
-                    </div>
-                    <div style="height: 300px;">
-                        <canvas id="categoryChart"></canvas>
-                    </div>
-                </div>
-            </div>
+    <div class="chart-card d-flex flex-column">
+        <div class="chart-title mb-2">
+            <span><i class="fas fa-chart-pie text-warning me-2"></i>By Category</span>
+        </div>
+        <div style="height: 200px; position: relative; flex-shrink: 0;">
+            <canvas id="categoryChart"></canvas>
+        </div>
+        <div id="customCategoryLegend" class="mt-3 flex-grow-1 custom-scrollbar" style="max-height: 130px; overflow-y: auto; overflow-x: hidden; font-size: 11px;">
+        </div>
+    </div>
+</div>
             <div class="col-lg-3">
                 <div class="chart-card">
                     <div class="chart-title">
@@ -667,10 +675,73 @@
     }
     
     function renderCategoryChart(data) {
-        const ctx = document.getElementById('categoryChart').getContext('2d');
-        if (charts.category) charts.category.destroy();
-        charts.category = new Chart(ctx, { type: 'doughnut', data: { labels: data.map(c => c.category), datasets: [{ data: data.map(c => c.total_sales), backgroundColor: colors.palette, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, usePointStyle: true } } }, onClick: (e, elements) => { if (elements.length > 0) toggleDrill('category', charts.category.data.labels[elements[0].index]); }, onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; } } });
-    }
+    const ctx = document.getElementById('categoryChart').getContext('2d');
+    if (charts.category) charts.category.destroy();
+
+    // Sort data descending so the largest slices are rendered first
+    const sortedData = [...data].sort((a, b) => b.total_sales - a.total_sales);
+
+    // Ensure we have enough colors if the database gets massive
+    const bgColors = sortedData.map((_, i) => colors.palette[i % colors.palette.length]);
+
+    charts.category = new Chart(ctx, { 
+        type: 'doughnut', 
+        data: { 
+            labels: sortedData.map(c => c.category), 
+            datasets: [{ 
+                data: sortedData.map(c => c.total_sales), 
+                backgroundColor: bgColors, 
+                borderWidth: 2,
+                borderColor: '#ffffff' // Adds a clean white border between slices
+            }] 
+        }, 
+        options: { 
+            responsive: true, 
+            maintainAspectRatio: false,
+            cutout: '70%', // Makes the ring slightly thinner for a more premium look
+            plugins: { 
+                // Turn off the native legend entirely to stop the chart from shrinking
+                legend: { display: false }, 
+                tooltip: {
+                    callbacks: {
+                        label: function(context) { 
+                            return ' ' + context.label + ': ' + formatMoney(context.raw); 
+                        }
+                    }
+                }
+            }, 
+            onClick: (e, elements) => { 
+                if (elements.length > 0) toggleDrill('category', charts.category.data.labels[elements[0].index]); 
+            }, 
+            onHover: (e, el) => { e.native.target.style.cursor = el[0] ? 'pointer' : 'default'; } 
+        } 
+    });
+
+    // Generate the Custom Scrollable HTML Legend
+    const legendContainer = document.getElementById('customCategoryLegend');
+    let legendHtml = '<div class="d-flex flex-column gap-1">';
+    
+    sortedData.forEach((item, index) => {
+        const color = bgColors[index];
+        // Note: The HTML legend items also trigger the toggleDrill function!
+        legendHtml += `
+            <div class="d-flex justify-content-between align-items-center py-1 px-2 rounded" 
+                 style="cursor: pointer; transition: background 0.1s;"
+                 onclick="toggleDrill('category', '${item.category}')"
+                 onmouseover="this.style.background='#f8fafc'"
+                 onmouseout="this.style.background='transparent'">
+                <div class="d-flex align-items-center overflow-hidden">
+                    <span style="display:inline-block; min-width:10px; height:10px; background-color:${color}; border-radius:50%; margin-right:8px;"></span>
+                    <span class="text-truncate text-muted fw-bold" style="max-width: 140px;" title="${item.category}">${item.category}</span>
+                </div>
+                <span class="text-dark fw-bold ms-2">${formatLarge(item.total_sales)}</span>
+            </div>
+        `;
+    });
+    
+    legendHtml += '</div>';
+    legendContainer.innerHTML = legendHtml;
+}
 
     function renderSupplierChart(data) {
         const ctx = document.getElementById('supplierChart').getContext('2d');
