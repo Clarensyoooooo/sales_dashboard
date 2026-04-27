@@ -78,6 +78,9 @@
                         </div>
                     </div>
                     <div class="col-md-6 text-md-end">
+                        <button id="mergeBtn" onclick="openMergeModal()" class="btn btn-warning fw-bold shadow-sm me-2 d-none">
+                            <i class="fas fa-object-group me-2"></i>Merge Selected
+                        </button>
                         <button onclick="openModal()" class="btn btn-primary fw-bold shadow-sm">
                             <i class="fas fa-plus-circle me-2"></i>Add New Product
                         </button>
@@ -92,7 +95,10 @@
                     <table class="table table-hover table-striped table-sm mb-0 align-middle">
                         <thead class="bg-light">
                             <tr>
-                                <th class="ps-3 py-3">Product Name</th>
+                                <th class="ps-3 py-3" style="width: 40px;">
+                                    <input class="form-check-input" type="checkbox" onchange="toggleAllMerge(this)">
+                                </th>
+                                <th>Product Name</th>
                                 <th>Unit</th>
                                 <th>Category</th>
                                 <th>Supplier</th>
@@ -104,7 +110,7 @@
                             </tr>
                         </thead>
                         <tbody id="productTable">
-                            <tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading products...</td></tr>
+                            <tr><td colspan="10" class="text-center py-5 text-muted"><i class="fas fa-spinner fa-spin me-2"></i>Loading products...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -117,6 +123,30 @@
                         <button class="btn btn-outline-secondary" onclick="changePage('next')"><i class="fas fa-angle-right"></i></button>
                         <button class="btn btn-outline-secondary" onclick="changePage('last')"><i class="fas fa-angle-double-right"></i></button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="mergeModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title fw-bold text-dark"><i class="fas fa-object-group me-2"></i>Merge Duplicate Products</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">Select the primary product to keep. The other selected products will be deleted, their stock will be added to the primary, and all sales records will be updated to point to the primary product.</p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Primary Product to Keep:</label>
+                        <select id="primaryProductSelect" class="form-select border-warning"></select>
+                    </div>
+                </div>
+                <div class="modal-footer border-top-0 bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning fw-bold" onclick="executeMerge()">
+                        <i class="fas fa-check me-2"></i>Merge Now
+                    </button>
                 </div>
             </div>
         </div>
@@ -229,7 +259,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         let allProducts = [];
@@ -237,12 +266,75 @@
         let currentPage = 1;
         const itemsPerPage = 50;
         let productModal;
+        let mergeModal;
 
         document.addEventListener('DOMContentLoaded', () => {
             productModal = new bootstrap.Modal(document.getElementById('productModal'));
+            mergeModal = new bootstrap.Modal(document.getElementById('mergeModal'));
             attachPriceCalculators('prodSPrice', 'prodNPrice', 'prodMarkup', 'prodMargin');
             loadProducts();
         });
+
+        // --- MERGE LOGIC ---
+        function toggleAllMerge(source) {
+            const checkboxes = document.querySelectorAll('.merge-checkbox');
+            checkboxes.forEach(cb => cb.checked = source.checked);
+            checkMergeButton();
+        }
+
+        function checkMergeButton() {
+            const checked = document.querySelectorAll('.merge-checkbox:checked');
+            const mergeBtn = document.getElementById('mergeBtn');
+            if (checked.length >= 2) {
+                mergeBtn.classList.remove('d-none');
+            } else {
+                mergeBtn.classList.add('d-none');
+            }
+        }
+
+        function openMergeModal() {
+            const checked = document.querySelectorAll('.merge-checkbox:checked');
+            const select = document.getElementById('primaryProductSelect');
+            select.innerHTML = '';
+            
+            checked.forEach(cb => {
+                const option = document.createElement('option');
+                option.value = cb.value;
+                option.textContent = cb.getAttribute('data-name');
+                select.appendChild(option);
+            });
+            
+            mergeModal.show();
+        }
+
+        async function executeMerge() {
+            const primaryId = document.getElementById('primaryProductSelect').value;
+            const checkedBoxes = Array.from(document.querySelectorAll('.merge-checkbox:checked'));
+            const duplicateIds = checkedBoxes.map(cb => cb.value).filter(id => id !== primaryId);
+
+            if(!confirm("Are you sure? This will consolidate inventory and permanently delete the duplicate products.")) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('primary_id', primaryId);
+                formData.append('duplicate_ids', JSON.stringify(duplicateIds));
+
+                const res = await fetch('merge_products.php', { method: 'POST', body: formData });
+                const result = await res.json();
+                
+                if(result.success) {
+                    mergeModal.hide();
+                    loadProducts(); 
+                    document.getElementById('mergeBtn').classList.add('d-none');
+                    showAlert("Items merged successfully!", "success");
+                } else {
+                    showAlert("Merge Error: " + result.message, "danger");
+                }
+            } catch (err) { 
+                console.error(err);
+                showAlert("Error merging items.", "danger"); 
+            }
+        }
 
         // --- PRICING CALCULATOR LOGIC ---
         function attachPriceCalculators(sPriceId, nPriceId, markupId, marginId) {
@@ -328,63 +420,64 @@
         }
 
         function renderTable() {
-    const tbody = document.getElementById('productTable');
-    tbody.innerHTML = '';
-    
-    if (filteredProducts.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>No products found.</td></tr>`;
-        document.getElementById('paginationBar').classList.add('d-none');
-        return;
-    }
-    document.getElementById('paginationBar').classList.remove('d-none');
+            const tbody = document.getElementById('productTable');
+            tbody.innerHTML = '';
+            
+            if (filteredProducts.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="text-center py-5 text-muted"><i class="fas fa-box-open fa-3x mb-3 opacity-25"></i><br>No products found.</td></tr>`;
+                document.getElementById('paginationBar').classList.add('d-none');
+                return;
+            }
+            document.getElementById('paginationBar').classList.remove('d-none');
 
-    const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-    const start = (currentPage - 1) * itemsPerPage;
-    const end = start + itemsPerPage;
-    const displayData = filteredProducts.slice(start, end);
+            const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const displayData = filteredProducts.slice(start, end);
 
-    displayData.forEach(p => {
-        const tr = document.createElement('tr');
-        const stock = parseInt(p.current_stock || 0);
-        const reorder = parseInt(p.reorder_level || 10);
-        const isLow = stock <= reorder;
+            displayData.forEach(p => {
+                const tr = document.createElement('tr');
+                const stock = parseInt(p.current_stock || 0);
+                const reorder = parseInt(p.reorder_level || 10);
+                const isLow = stock <= reorder;
 
-        // Status Badge Logic
-        let stockBadge = isLow 
-            ? `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>${stock}</span>` 
-            : `<span class="badge bg-success">${stock}</span>`;
+                let stockBadge = isLow 
+                    ? `<span class="badge bg-danger"><i class="fas fa-exclamation-triangle me-1"></i>${stock}</span>` 
+                    : `<span class="badge bg-success">${stock}</span>`;
 
-        // --- NEW: Quote Draft Badge Logic ---
-        let draftBadge = (p.is_draft == 1 || p.is_draft == '1') 
-            ? `<span class="badge bg-warning text-dark ms-2 shadow-sm" title="Added from Quotation - Needs Review"><i class="fas fa-pencil-alt me-1"></i> QUOTE DRAFT</span>` 
-            : '';
+                let draftBadge = (p.is_draft == 1 || p.is_draft == '1') 
+                    ? `<span class="badge bg-warning text-dark ms-2 shadow-sm" title="Added from Quotation - Needs Review"><i class="fas fa-pencil-alt me-1"></i> QUOTE DRAFT</span>` 
+                    : '';
 
-        tr.innerHTML = `
-            <td class="ps-3 fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name} ${draftBadge}</td>
-            <td class="text-muted small">${p.unit || '-'}</td>
-            <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
-            <td class="small">${p.supplier || '-'}</td>
-            <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-            <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
-            <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
-            <td class="text-center">${stockBadge}</td>
-            <td class="text-end pe-3">
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id})" title="Delete">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                </div>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
+                tr.innerHTML = `
+                    <td class="ps-3">
+                        <input class="form-check-input merge-checkbox" type="checkbox" value="${p.id}" data-name="${p.name.replace(/"/g, '&quot;')}" onchange="checkMergeButton()">
+                    </td>
+                    <td class="fw-bold text-dark col-truncate" title="${p.name.replace(/"/g, '&quot;')}">${p.name} ${draftBadge}</td>
+                    <td class="text-muted small">${p.unit || '-'}</td>
+                    <td><span class="badge bg-light text-dark border border-secondary-subtle">${p.category_code}</span></td>
+                    <td class="small">${p.supplier || '-'}</td>
+                    <td class="text-end font-monospace">₱${parseFloat(p.supplier_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+                    <td class="text-end font-monospace fw-bold text-primary">₱${parseFloat(p.nam_price).toLocaleString('en-PH', {minimumFractionDigits: 2})}</td>
+                    <td class="text-center"><span class="badge bg-soft-success text-success border border-success-subtle">${p.margin || '0%'}</span></td>
+                    <td class="text-center">${stockBadge}</td>
+                    <td class="text-end pe-3">
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick='editProduct(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteProduct(${p.id})" title="Delete">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
 
-    document.getElementById('currentPage').textContent = currentPage;
-    document.getElementById('totalPages').textContent = totalPages;
-}
+            document.getElementById('currentPage').textContent = currentPage;
+            document.getElementById('totalPages').textContent = totalPages;
+        }
 
         function changePage(action) {
             const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
@@ -398,7 +491,6 @@
         function updateStats(data) {
             document.getElementById('totalItems').textContent = data.length.toLocaleString();
             
-            // Low Stock Count
             const lowStock = data.filter(p => parseInt(p.current_stock || 0) <= parseInt(p.reorder_level || 10)).length;
             document.getElementById('lowStockCount').textContent = lowStock;
 
@@ -423,7 +515,6 @@
             document.getElementById('prodStock').value = p.current_stock || 0;
             document.getElementById('prodReorder').value = p.reorder_level || 10;
             
-            // Trigger calculation to autofill markup and margin!
             document.getElementById('prodNPrice').dispatchEvent(new Event('input'));
             
             productModal.show();

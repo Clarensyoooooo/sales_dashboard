@@ -162,6 +162,7 @@
                 <div class="kpi-card p-3 h-100 border-start border-success border-4">
                     <div class="kpi-label text-success">Net Profit</div>
                     <div class="kpi-value" id="totalProfit">₱0.00</div>
+                    <div class="mt-2" id="profitGrowthBadge"></div>
                     <div class="small text-muted mt-1 fw-bold">Margin: <span class="text-success" id="profitMargin">0%</span></div>
                     <i class="fas fa-chart-line icon-bg text-success"></i>
                 </div>
@@ -588,6 +589,27 @@
                 `;
             } else {
                 growthBadge.innerHTML = '';
+            }
+
+            // --- NEW: Profit Growth Badge Logic ---
+            const pGrowthPct = data.stats.profit_growth_pct || 0;
+            const pGrowthVal = data.stats.profit_growth_value || 0;
+            const pGrowthBadge = document.getElementById('profitGrowthBadge');
+            
+            if (period === 'custom_month' || period === 'month' || period === 'year') {
+                const pIcon = pGrowthPct >= 0 ? 'fa-arrow-up' : 'fa-arrow-down';
+                const pColor = pGrowthPct >= 0 ? 'text-success' : 'text-danger';
+                const pDisplaySign = pGrowthVal >= 0 ? '+' : '';
+                const pFormattedDiff = '₱' + Math.abs(pGrowthVal).toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                
+                pGrowthBadge.innerHTML = `
+                    <small class="${pColor} fw-bold d-block" style="font-size: 0.85rem;">
+                        <i class="fas ${pIcon}"></i> ${Math.abs(pGrowthPct).toFixed(1)}% <span class="text-muted" style="font-size: 0.75rem;">(${pDisplaySign}${pFormattedDiff})</span>
+                    </small>
+                    <small class="text-muted fw-bold" style="font-size: 0.65rem; letter-spacing: 0.5px; text-transform: uppercase;">vs previous period</small>
+                `;
+            } else {
+                pGrowthBadge.innerHTML = '';
             }
 
             renderDailyChart(data.chart_data);

@@ -95,7 +95,9 @@ $stats = [
     'avg_order_value' => 0,
     'profit_margin' => 0,
     'growth_sales' => 0,
-    'growth_value' => 0 
+    'growth_value' => 0,
+    'profit_growth_pct' => 0,
+    'profit_growth_value' => 0
 ];
 
 if ($stats['total_orders'] > 0) $stats['avg_order_value'] = $stats['total_sales'] / $stats['total_orders'];
@@ -136,14 +138,20 @@ if (!empty($_GET['start_date'])) {
         }
     }
     
-    $prev_sql = "SELECT SUM(total_nam_amount) as old_sales FROM sales WHERE " . implode(" AND ", $prev_where);
+    $prev_sql = "SELECT SUM(total_nam_amount) as old_sales, SUM(income) as old_profit FROM sales WHERE " . implode(" AND ", $prev_where);
     $prev_row = executeQuery($conn, $prev_sql, $prev_types, $prev_params)->fetch_assoc();
+    
     $old_sales = floatval($prev_row['old_sales'] ?? 0);
+    $old_profit = floatval($prev_row['old_profit'] ?? 0);
     
     $stats['growth_value'] = $stats['total_sales'] - $old_sales; 
     
     if ($old_sales > 0) $stats['growth_sales'] = (($stats['total_sales'] - $old_sales) / $old_sales) * 100;
     else $stats['growth_sales'] = ($stats['total_sales'] > 0) ? 100 : 0;
+    
+    $stats['profit_growth_value'] = $stats['total_profit'] - $old_profit;
+    if ($old_profit > 0) $stats['profit_growth_pct'] = (($stats['total_profit'] - $old_profit) / $old_profit) * 100;
+    else $stats['profit_growth_pct'] = ($stats['total_profit'] > 0) ? 100 : 0;
 }
 
 // --- 3. Top Products ---
@@ -158,17 +166,14 @@ while ($r = $result->fetch_assoc()) {
 // --- 4. Chart Data ---
 $groupBy = $_GET['group_by'] ?? 'day'; 
 if ($groupBy === 'month') {
-    // Upgraded: Groups by year AND month so it doesn't break when searching across multiple years!
     $sql = "SELECT DATE_FORMAT(date, '%b %Y') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), MONTH(date), label ORDER BY YEAR(date), MONTH(date)";
 } elseif ($groupBy === 'year') {
     $sql = "SELECT YEAR(date) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date) ORDER BY YEAR(date)";
 } elseif ($groupBy === 'quarter') {
     $sql = "SELECT CONCAT('Q', QUARTER(date), ' ', YEAR(date)) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), QUARTER(date) ORDER BY YEAR(date), QUARTER(date)";
 } elseif ($groupBy === 'week') {
-    // NEW: Handles the new 'Weekly' grouping option!
     $sql = "SELECT CONCAT('Week ', WEEK(date, 1), ', ', YEAR(date)) as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY YEAR(date), WEEK(date, 1) ORDER BY YEAR(date), WEEK(date, 1)";
 } else {
-    // Upgraded: Shows Month AND Day (e.g. Jan 15) so you don't just see random numbers on the timeline
     $sql = "SELECT DATE_FORMAT(date, '%b %d') as label, SUM(total_nam_amount) as sales, SUM(income) as profit FROM sales $where_sql AND date IS NOT NULL GROUP BY date ORDER BY date";
 }
 
@@ -227,7 +232,7 @@ foreach ($company_sales as $cs) {
         ];
     }
     $manager_sales[$emp]['sales'] += $cs['total_sales'];
-    $manager_sales[$emp]['company_count'] += 1; // Add +1 for each unique company
+    $manager_sales[$emp]['company_count'] += 1; 
 }
 
 $manager_sales_arr = [];
