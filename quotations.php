@@ -364,15 +364,22 @@ if ($resReserved) {
         [contenteditable]:empty:before { content: attr(placeholder); color: #adb5bd; pointer-events: none; display: block; font-style: italic; }
 
         @media print {
-            body > :not(#printContainer) { display: none !important; }
-            #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; }
+            body {
+        margin: 15mm !important; 
+    }
+    body > :not(#printContainer) { display: none !important; }
+    #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; }
+            #printContainer { display: block !important; position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 10mm; }
             .print-input { border-bottom: none !important; color: #000 !important; }
             .inline-edit { color: #000 !important; } 
             .print-input::-webkit-input-placeholder { color: transparent; }
             [contenteditable]:empty:before { display: none !important; }
             input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
             -webkit-print-color-adjust: exact; print-color-adjust: exact;
-            @page { size: A4 portrait; margin: 5mm; }
+            @page { 
+        size: A4 portrait; 
+        margin: 0mm !important; 
+    }
             #printArea { font-size: 11px !important; line-height: 1.1 !important; }
             #printArea h3 { font-size: 16px !important; margin-bottom: 2px !important; }
             #printArea h1 { font-size: 24px !important; margin-bottom: 0px !important; }
@@ -1597,14 +1604,13 @@ if ($resReserved) {
                                 <tr><th class="p-0 pb-0 align-top">CONTACT NUMBER:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Contact Number]"></div></td></tr>
                                 <tr><th class="p-0 pb-0 align-top">EMAIL ADDRESS:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Email]"></div></td></tr>
                                 <tr><th class="p-0 pb-0 mt-1 d-block align-top">TERMS:</th><td class="p-0 pb-0 mt-1"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${term}</div></td></tr>
-                                <tr><th class="p-0 pb-0 align-top">TRANSPORT:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Enter Transport]"></div></td></tr>
+
                             </table>
                         </div>
                         <div class="col-4">
                             <table class="table table-sm table-borderless mb-0">
                                 <tr><th width="130" class="p-0 pb-0 align-top">QUOTATION NO:</th><td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${ref}</div></td></tr>
                                 <tr><th class="p-0 pb-0 align-top">QUOTATION DATE:</th><td class="p-0 pb-0 fw-bold"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none;">${date}</div></td></tr>
-                                <tr><th class="p-0 pb-0 mt-4 d-block align-top">TRANSPORT ID:</th><td class="p-0 pb-0 mt-4"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Transport ID]"></div></td></tr>
                                 <tr><th class="p-0 pb-0 align-top">VEHICLE NO:</th><td class="p-0 pb-0"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Vehicle No]"></div></td></tr>
                                 <tr><th class="p-0 pb-0 text-muted align-top">INQUIRY REF #:</th><td class="p-0 pb-0 text-muted"><div contenteditable="true" class="print-input inline-edit w-100" style="outline: none; min-height: 1.4em;" placeholder="[Inquiry Ref]">${po}</div></td></tr>
                             </table>
